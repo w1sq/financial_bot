@@ -1,3 +1,3 @@
-# Telegram bot Template
+# Financial telegram bot
 
 It is a simple template for complex telegram bots with postgresql database and "best-practised" architecture written in my style
