@@ -1,15 +1,18 @@
-import time
 import asyncio
+import datetime
 from tinkoff.invest.utils import quotation_to_decimal
 from tinkoff.invest import (
+    Client,
     AsyncClient,
     TradeInstrument,
     MarketDataRequest,
     SubscribeTradesRequest,
     SubscriptionAction,
-    SubscriptionInterval,
 )
-import datetime
+import tinkoff
+import aiogram
+from db.storage import UserStorage
+
 blue_chips = {
     'BBG004S68B31':'ALRS',
     'BBG004730RP0':'GAZP',
@@ -44,12 +47,31 @@ chips_names = {
     'TATN': 'Татнефть',
     'YNDX': 'Yandex',
 }
+
+chips_lots = {
+    'ALRS': 10,
+    'GAZP': 10,
+    'GMKN': 1,
+    'IRAO': 100,
+    'LKOH': 1,
+    'MGNT': 1,
+    'MTSS': 10,
+    'NVTK': 1,
+    'PLZL': 1,
+    'ROSN': 1,
+    'RUAL': 10,
+    'SBER': 10,
+    'SNGS': 100,
+    'TATN': 1,
+    'YNDX': 1,
+}
+
 TOKEN = "t.nb6zNANS5GyESI_e_9ledD8iWDqVpgEK9ewrQu6Orr6F9N-NNdklR5r9VkwFs8RXiPzkXgxeUtcGSf_LxFgXAw"
 
 def get_whole_volume(trade_dict:dict) -> float:
     return trade_dict['buy'] + trade_dict['sell']
 
-async def main():
+async def market_review(tg_bot:aiogram.Bot, user_storage:UserStorage):
     async def request_iterator():
         yield MarketDataRequest(
             subscribe_trades_request=SubscribeTradesRequest(
@@ -70,14 +92,17 @@ async def main():
             request_iterator()
         ):
             # print(marketdata)
+            # for user in await user_storage.get_all_members():
+
+            #     await tg_bot._bot.send_message(user.user_id, 'test')
             if marketdata.trade:
                 if marketdata.trade.time.minute > 10:
                     local_time = f'{marketdata.trade.time.hour}:{marketdata.trade.time.minute}'
                 else:
                     local_time = f'{marketdata.trade.time.hour}:0{marketdata.trade.time.minute}'
-                local_price = float(quotation_to_decimal(marketdata.trade.price))
-                local_volume = local_price * marketdata.trade.quantity
                 local_figi = marketdata.trade.figi
+                local_price = float(quotation_to_decimal(marketdata.trade.price))
+                local_volume = local_price * marketdata.trade.quantity * chips_lots[blue_chips[local_figi]]
                 if marketdata.trade.direction == 1:
                     local_volume_direction = 'buy'
                 elif marketdata.trade.direction == 2:
@@ -99,27 +124,40 @@ async def main():
                     data[local_time][blue_chips[local_figi]][local_volume_direction] += local_volume
                     null_chip = {'buy': 0, 'sell': 0}
                     if len(data.keys()) > 4:
+                        print(data)
                         normal_keys = list(data.keys())
                         for chip in data[normal_keys[2]].keys():
                             to_review_volume = get_whole_volume(data[normal_keys[2]][chip])
-                            if to_review_volume > 12000000 and to_review_volume > get_whole_volume(data[normal_keys[0]].get(chip, null_chip)) * 15 and to_review_volume > get_whole_volume(data[normal_keys[1]].get(chip, null_chip)) * 15 and to_review_volume > get_whole_volume(data[normal_keys[3]].get(chip, null_chip)) * 15:
-                                print(data)
+                            koef = 15
+                            if to_review_volume > 12000000 and to_review_volume > get_whole_volume(data[normal_keys[0]].get(chip, null_chip)) * koef and to_review_volume > get_whole_volume(data[normal_keys[1]].get(chip, null_chip)) * koef and to_review_volume > get_whole_volume(data[normal_keys[3]].get(chip, null_chip)) * koef:
                                 now = datetime.datetime.now()
-                                buying_part = round(data[normal_keys[2]][chip]['buy']//to_review_volume, 2)
+                                buying_part = round(data[normal_keys[2]][chip]['buy']/to_review_volume, 2)
                                 selling_part = 1 - buying_part
-                                print(f'''
+                                trade_time = datetime.datetime.strptime(normal_keys[2], "%H:%M") + datetime.timedelta(hours=3)
+                                # db_users = await user_storage.get_all_members()
+                                for user in await user_storage.get_all_members():
+                                    try:
+                                        await tg_bot._bot.send_message(user.user_id, f'''
 #{chip}
 {chips_names[chip]}
 
 🔵Аномальный объём
 Изменение цены: ...
-Объём: {round(to_review_volume//1000000, 1)} ₽
+Объём: {round(to_review_volume/1000000, 1)}М ₽
 Покупка: {int(buying_part*100)}% Продажа: {int(selling_part*100)}%
-Время: {now:%Y-%m-%d} {normal_keys[1]}
+Время: {now:%Y-%m-%d} {trade_time:%H:%M}
 Цена: {data[normal_keys[2]][chip]['price']} ₽
 Изменение за день: ...
-                                ''')
+                                        ''')
+                                    except Exception:
+                                        pass
                         data.pop(normal_keys[0])
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    with Client(TOKEN) as tinkoff_client:
+        for figi in blue_chips.keys():
+            instruments = tinkoff_client.instruments
+            for method in ["share_by"]:
+                item = getattr(instruments, method)(id_type=tinkoff.invest.services.InstrumentIdType.INSTRUMENT_ID_TYPE_FIGI, id =figi).instrument
+                print(item.ticker, item.lot)
+    # asyncio.run(market_review())
