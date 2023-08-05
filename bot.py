@@ -113,3 +113,4 @@ class TG_Bot():
     def _create_keyboards(self):
         self._menu_keyboard_user = ReplyKeyboardMarkup(resize_keyboard=True)\
             .row(KeyboardButton('ℹ️ О Боте')).row(KeyboardButton('⚙️ Настройки уведомлений'))
+

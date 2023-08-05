@@ -71,7 +71,8 @@ TOKEN = "t.nb6zNANS5GyESI_e_9ledD8iWDqVpgEK9ewrQu6Orr6F9N-NNdklR5r9VkwFs8RXiPzkX
 def get_whole_volume(trade_dict:dict) -> float:
     return trade_dict['buy'] + trade_dict['sell']
 
-async def request_iterator():
+async def market_review(tg_bot:aiogram.Bot, user_storage:UserStorage):
+    async def request_iterator():
         yield MarketDataRequest(
             subscribe_trades_request=SubscribeTradesRequest(
                 subscription_action=SubscriptionAction.SUBSCRIPTION_ACTION_SUBSCRIBE,
@@ -85,8 +86,9 @@ async def request_iterator():
         while True:
             await asyncio.sleep(1)
 
-async def smth(client:AsyncClient, data:dict, user_storage:UserStorage, tg_bot:aiogram.Bot):
-    async for marketdata in client.market_data_stream.market_data_stream(
+    async with AsyncClient(TOKEN) as client:
+        data = {}
+        async for marketdata in client.market_data_stream.market_data_stream(
             request_iterator()
         ):
             # print(marketdata)
@@ -111,54 +113,51 @@ async def smth(client:AsyncClient, data:dict, user_storage:UserStorage, tg_bot:a
                 if local_time in data.keys():
                     if blue_chips[local_figi] in data[local_time].keys():
                         data[local_time][blue_chips[local_figi]][local_volume_direction] += local_volume
-                        data[local_time][blue_chips[local_figi]]['price'] = local_price
+                        data[local_time][blue_chips[local_figi]]['close_price'] = local_price
+                        if local_price > data[local_time][blue_chips[local_figi]]['max_price']:
+                            data[local_time][blue_chips[local_figi]]['max_price'] = local_price
+                        if local_price < data[local_time][blue_chips[local_figi]]['min_price']:
+                            data[local_time][blue_chips[local_figi]]['min_price'] = local_price
                     else:
-                        data[local_time][blue_chips[local_figi]] = {'buy': 0, 'sell': 0, 'price': local_price}
+                        data[local_time][blue_chips[local_figi]] = {'buy': 0, 'sell': 0, 'open_price': local_price, 'close_price': local_price, 'max_price': local_price, 'min_price': local_price}
                         data[local_time][blue_chips[local_figi]][local_volume_direction] += local_volume
                 else:
                     data[local_time] = {
-                        blue_chips[local_figi]: {'buy': 0, 'sell': 0, 'price': local_price}
+                        blue_chips[local_figi]: {'buy': 0, 'sell': 0, 'open_price': local_price, 'close_price': local_price, 'max_price': local_price, 'min_price': local_price}
                     }
                     data[local_time][blue_chips[local_figi]][local_volume_direction] += local_volume
                     null_chip = {'buy': 0, 'sell': 0}
-                    if len(data.keys()) > 4:
+                    if len(data.keys()) > 3:
                         print(data)
                         normal_keys = list(data.keys())
                         for chip in data[normal_keys[2]].keys():
                             to_review_volume = get_whole_volume(data[normal_keys[2]][chip])
-                            koef = 15
-                            if to_review_volume > 12000000 and to_review_volume > get_whole_volume(data[normal_keys[0]].get(chip, null_chip)) * koef and to_review_volume > get_whole_volume(data[normal_keys[1]].get(chip, null_chip)) * koef and to_review_volume > get_whole_volume(data[normal_keys[3]].get(chip, null_chip)) * koef:
+                            koef = 12
+                            big_chips = ['SBER', 'GAZP', 'LKOH']
+                            if to_review_volume > 50000000 and chip not in big_chips or to_review_volume > 12000000 and to_review_volume > get_whole_volume(data[normal_keys[0]].get(chip, null_chip)) * koef and to_review_volume > get_whole_volume(data[normal_keys[1]].get(chip, null_chip)) * koef:
                                 now = datetime.datetime.now()
                                 buying_part = round(data[normal_keys[2]][chip]['buy']/to_review_volume, 2)
                                 selling_part = 1 - buying_part
                                 trade_time = datetime.datetime.strptime(normal_keys[2], "%H:%M") + datetime.timedelta(hours=3)
+                                price_delta = round((data[normal_keys[2]][chip]['close_price']-data[normal_keys[2]][chip]['open_price'])/((data[normal_keys[2]][chip]['max_price']+data[normal_keys[2]][chip]['min_price'])/2)*100, 2)
                                 # db_users = await user_storage.get_all_members()
                                 for user in await user_storage.get_all_members():
                                     try:
                                         await tg_bot._bot.send_message(user.user_id, f'''
-#{chip}
+#{chip} {price_delta}% {round(to_review_volume/1000000, 1)}М ₽
 {chips_names[chip]}
 
 🔵Аномальный объём
-Изменение цены: ...
+Изменение цены: {price_delta}%
 Объём: {round(to_review_volume/1000000, 1)}М ₽
 Покупка: {int(buying_part*100)}% Продажа: {int(selling_part*100)}%
 Время: {now:%Y-%m-%d} {trade_time:%H:%M}
-Цена: {data[normal_keys[2]][chip]['price']} ₽
+Цена: {data[normal_keys[2]][chip]['close_price']} ₽
 Изменение за день: ...
                                         ''')
                                     except Exception:
                                         pass
                         data.pop(normal_keys[0])
-
-async def market_review(tg_bot:aiogram.Bot, user_storage:UserStorage):
-    async with AsyncClient(TOKEN) as client:
-        data = {}
-        while True:
-            try:
-                await smth(client, data, user_storage, tg_bot)
-            except tinkoff.invest.exceptions.AioRequestError:
-                pass
 
 if __name__ == "__main__":
     with Client(TOKEN) as tinkoff_client:

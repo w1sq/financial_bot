@@ -57,6 +57,14 @@ class UserStorage():
             INSERT INTO {self.__table} (id, role) VALUES ($1, $2)
         ''', user.user_id, user.role)
 
+    async def get_all_recipients(self) -> List[User]| None:
+        data = await self._db.fetch(f'''
+            SELECT * FROM {self.__table} WHERE 
+        ''')
+        if data is None:
+            return None
+        return [User(user_data[0], user_data[1]) for user_data in data]
+
     async def get_all_members(self) -> List[User]| None:
         data = await self._db.fetch(f'''
             SELECT * FROM {self.__table}
