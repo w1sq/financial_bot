@@ -25,11 +25,11 @@ blue_chips = {
     # 'GMKN': 'BBG004731489',
     # 'IRAO': 'BBG004S68473',
     # 'LKOH': 'BBG004731032',
-    'MGNT': 'BBG004RVFCY3',
+    # 'MGNT': 'BBG004RVFCY3',
     # 'MTSS': 'BBG004S681W1',
     # 'NVTK': 'BBG00475KKY8',
     # 'PLZL': 'BBG000R607Y3',
-    # 'ROSN': 'BBG004731354',
+    'ROSN': 'BBG004731354',
     # 'RUAL': 'BBG008F2T3T2',
     # 'SBER': 'BBG004730N88',
     # 'SNGS': 'BBG0047315D0',
@@ -110,20 +110,22 @@ if __name__ == "__main__":
             to_check = None
             for candle in tinkoff_client.get_all_candles(
                 figi=figi,
-                from_ = now() - timedelta(days = 1),
-                to = now(),
+                # from_ = now() - timedelta(days = 1),
+                from_ = datetime(2023, 8, 3),
+                # to = now(),
+                to = datetime(2023, 8, 4),
                 interval = CandleInterval.CANDLE_INTERVAL_1_MIN
             ):
                 print(candle.time, float(quotation_to_decimal(candle.close)))
                 # print(candle.time, candle.volume* (quotation_to_decimal(candle.high) + quotation_to_decimal(candle.low))/2)
-                if to_check and to_check.volume > (10*candle.volume):
-                    print(ticker, to_check.time, to_check.volume, quotation_to_decimal(to_check.open), quotation_to_decimal(to_check.high), quotation_to_decimal(to_check.low), quotation_to_decimal(to_check.close))
-                    to_check = None
-                if day_candles and (candle.volume > (10*day_candles[-1].volume)):
-                    to_check = candle
-                else:
-                    to_check = None
-                day_candles.append(candle)
+                # if to_check and to_check.volume > (10*candle.volume):
+                #     print(ticker, to_check.time, to_check.volume, quotation_to_decimal(to_check.open), quotation_to_decimal(to_check.high), quotation_to_decimal(to_check.low), quotation_to_decimal(to_check.close))
+                #     to_check = None
+                # if day_candles and (candle.volume > (10*day_candles[-1].volume)):
+                #     to_check = candle
+                # else:
+                #     to_check = None
+                # day_candles.append(candle)
 
 # async def main():
 #     async def request_iterator():

@@ -1,6 +1,7 @@
 '''All tgbot logic is here'''
 
 import typing
+import os
 
 import aiogram
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -76,11 +77,18 @@ class TG_Bot():
         settings_keyboard = self._create_settings_keyboard(user)
         await call.message.edit_text(Texts.settings, reply_markup= settings_keyboard, parse_mode='HTML')
 
+    async def _reboot(self, message:aiogram.types.Message, user:User):
+        await message.answer('Server is rebooting')
+        await message.delete()
+        os.system('reboot')
+
     def _init_handler(self):
         self._dispatcher.register_message_handler(self._user_middleware(self._show_menu),
                                                     commands=['start', 'menu'])
         self._dispatcher.register_message_handler(self._user_middleware(self._show_info), text='ℹ️ О Боте')
         self._dispatcher.register_message_handler(self._user_middleware(self._show_settings), text='⚙️ Настройки уведомлений')
+        self._dispatcher.register_message_handler(self._user_middleware(self._reboot),
+                                                    commands=['reboot'])
 
         self._dispatcher.register_callback_query_handler(self._platform, aiogram.dispatcher.filters.Text(startswith="platform "))
         self._dispatcher.register_callback_query_handler(self._notifications, aiogram.dispatcher.filters.Text(startswith="notifications"))

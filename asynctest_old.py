@@ -8,6 +8,7 @@ from tinkoff.invest import (
     MarketDataRequest,
     SubscribeTradesRequest,
     SubscriptionAction,
+    CandleInterval
 )
 import tinkoff
 import aiogram
@@ -66,10 +67,27 @@ chips_lots = {
     'YNDX': 1,
 }
 
+chips_last_prices = {}
+
 TOKEN = "t.nb6zNANS5GyESI_e_9ledD8iWDqVpgEK9ewrQu6Orr6F9N-NNdklR5r9VkwFs8RXiPzkXgxeUtcGSf_LxFgXAw"
 
 def get_whole_volume(trade_dict:dict) -> float:
     return trade_dict['buy'] + trade_dict['sell']
+
+async def get_last_prices() -> dict:
+    async with AsyncClient(TOKEN) as tinkoff_client:
+        for figi, ticker in blue_chips.items():
+            chip_last_price = 0
+            async for candle in tinkoff_client.get_all_candles(
+                figi=figi,
+                # from_ = now() - timedelta(days = 1),
+                from_ = datetime.datetime(2023, 8, 7),
+                # to = now(),
+                to = datetime.datetime(2023, 8, 8),
+                interval = CandleInterval.CANDLE_INTERVAL_1_MIN
+            ):
+                chip_last_price = float(quotation_to_decimal(candle.close))
+            chips_last_prices[ticker] = chip_last_price
 
 async def market_review(tg_bot:aiogram.Bot, user_storage:UserStorage):
     async def request_iterator():
@@ -85,9 +103,10 @@ async def market_review(tg_bot:aiogram.Bot, user_storage:UserStorage):
         )
         while True:
             await asyncio.sleep(1)
-
+    await get_last_prices()
     async with AsyncClient(TOKEN) as client:
         data = {}
+        print(chips_last_prices)
         async for marketdata in client.market_data_stream.market_data_stream(
             request_iterator()
         ):
@@ -128,24 +147,25 @@ async def market_review(tg_bot:aiogram.Bot, user_storage:UserStorage):
                     data[local_time][blue_chips[local_figi]][local_volume_direction] += local_volume
                     null_chip = {'buy': 0, 'sell': 0}
                     if len(data.keys()) > 3:
-                        print(data)
+                        # print(data)
                         normal_keys = list(data.keys())
                         for chip in data[normal_keys[2]].keys():
                             to_review_volume = get_whole_volume(data[normal_keys[2]][chip])
                             koef = 12
                             big_chips = ['SBER', 'GAZP', 'LKOH']
+                            price_delta = round((data[normal_keys[2]][chip]['close_price']-data[normal_keys[2]][chip]['open_price'])/((data[normal_keys[2]][chip]['max_price']+data[normal_keys[2]][chip]['min_price'])/2)*100, 2)
+                            # if abs(price_delta) >= 2 and (to_review_volume > 50000000 and chip not in big_chips or to_review_volume > 12000000 and to_review_volume > get_whole_volume(data[normal_keys[0]].get(chip, null_chip)) * koef and to_review_volume > get_whole_volume(data[normal_keys[1]].get(chip, null_chip)) * koef):
                             if to_review_volume > 50000000 and chip not in big_chips or to_review_volume > 12000000 and to_review_volume > get_whole_volume(data[normal_keys[0]].get(chip, null_chip)) * koef and to_review_volume > get_whole_volume(data[normal_keys[1]].get(chip, null_chip)) * koef:
                                 now = datetime.datetime.now()
                                 buying_part = round(data[normal_keys[2]][chip]['buy']/to_review_volume, 2)
                                 selling_part = 1 - buying_part
                                 trade_time = datetime.datetime.strptime(normal_keys[2], "%H:%M") + datetime.timedelta(hours=3)
-                                price_delta = round((data[normal_keys[2]][chip]['close_price']-data[normal_keys[2]][chip]['open_price'])/((data[normal_keys[2]][chip]['max_price']+data[normal_keys[2]][chip]['min_price'])/2)*100, 2)
                                 # db_users = await user_storage.get_all_members()
                                 for user in await user_storage.get_all_members():
                                     try:
                                         await tg_bot._bot.send_message(user.user_id, f'''
 #{chip} {price_delta}% {round(to_review_volume/1000000, 1)}М ₽
-{chips_names[chip]}
+<b>{chips_names[chip]}</b>
 
 🔵Аномальный объём
 Изменение цены: {price_delta}%
@@ -153,9 +173,9 @@ async def market_review(tg_bot:aiogram.Bot, user_storage:UserStorage):
 Покупка: {int(buying_part*100)}% Продажа: {int(selling_part*100)}%
 Время: {now:%Y-%m-%d} {trade_time:%H:%M}
 Цена: {data[normal_keys[2]][chip]['close_price']} ₽
-Изменение за день: ...
-                                        ''')
-                                    except Exception:
+Изменение за день: {round(100*(data[normal_keys[2]][chip]['close_price']-chips_last_prices[chip])/chips_last_prices[chip], 2)}%
+                                        ''', parse_mode = 'HTML')
+                                    except Exception as e:
                                         pass
                         data.pop(normal_keys[0])
 
