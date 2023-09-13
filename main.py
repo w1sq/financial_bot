@@ -7,7 +7,7 @@ from bot import TG_Bot
 from db import DB
 from db.storage import UserStorage
 from config import Config
-from asynctest_old import market_review
+from market_tinkoff import market_review
 
 tg_bot = None
 user_storage = None
