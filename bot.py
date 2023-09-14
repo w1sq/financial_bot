@@ -31,6 +31,13 @@ class TG_Bot():
         print('Bot has started')
         await self._dispatcher.start_polling()
 
+    async def send_signal(self, message:str):
+        for user in await self._user_storage.get_all_members():
+            try:
+                await self._bot.send_message(user.user_id, message)
+            except Exception:
+                pass
+
     async def _show_menu(self, message:aiogram.types.Message, user:User):
         await message.answer(Texts.welcome, reply_markup=self._menu_keyboard_user)
 
