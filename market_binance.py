@@ -45,7 +45,7 @@ class Binance():
 Время: {now:%Y-%m-%d} {prev_data[0]}
 Цена: {prev_data[1]['last_price']} $'''
                         print(message_to_send)
-                        self._loop.create_task(self._tg_bot.send_signal(message_to_send))
+                        self._loop.create_task(self._tg_bot.send_signal(message_to_send, 'binance'))
                 self.last_prices[formatted_time] = {
                     'volume':local_volume,
                     'first_price':local_price,

@@ -12,6 +12,7 @@ from market_tinkoff import market_review
 from market_binance import Binance
 
 class Launcher():
+    '''Class for launching all project subprocesses together'''
     def __init__(self):
         self.tg_bot:aiogram.Bot = None
         self.user_storage:UserStorage = None

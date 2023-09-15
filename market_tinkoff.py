@@ -12,7 +12,7 @@ from tinkoff.invest import (
     CandleInterval
 )
 import tinkoff
-import aiogram
+from bot import TG_Bot
 from db.storage import UserStorage
 
 blue_chips = {
@@ -98,7 +98,7 @@ async def get_last_prices(tinkoff_client:AsyncClient) -> dict:
             break
         days_ago += 1
 
-async def market_review(tg_bot:aiogram.Bot, user_storage:UserStorage):
+async def market_review(tg_bot:TG_Bot, user_storage:UserStorage):
     async def request_iterator():
         yield MarketDataRequest(
             subscribe_trades_request=SubscribeTradesRequest(
@@ -121,8 +121,8 @@ async def market_review(tg_bot:aiogram.Bot, user_storage:UserStorage):
             async for marketdata in client.market_data_stream.market_data_stream(
                 request_iterator()
             ):
-                if time.strftime('%H %M') == '11 55':
-                    break
+                # if time.strftime('%H %M') == '11 55':
+                #     break
                 # print(marketdata)
                 if marketdata.trade:
                     if marketdata.trade.time.minute > 10:
@@ -171,9 +171,7 @@ async def market_review(tg_bot:aiogram.Bot, user_storage:UserStorage):
                                     selling_part = 1 - buying_part
                                     trade_time = datetime.datetime.strptime(normal_keys[2], "%H:%M") + datetime.timedelta(hours=3)
                                     # db_users = await user_storage.get_all_members()
-                                    for user in await user_storage.get_all_members():
-                                        try:
-                                            await tg_bot._bot.send_message(user.user_id, f'''
+                                    message_to_send = f'''
 #{chip} {price_delta}% {round(to_review_volume/1000000, 1)}М ₽
 <b>{chips_names[chip]}</b>
 
@@ -183,10 +181,8 @@ async def market_review(tg_bot:aiogram.Bot, user_storage:UserStorage):
 Покупка: {int(buying_part*100)}% Продажа: {int(selling_part*100)}%
 Время: {now:%Y-%m-%d} {trade_time:%H:%M}
 Цена: {data[normal_keys[2]][chip]['close_price']} ₽
-Изменение за день: {round(100*(data[normal_keys[2]][chip]['close_price']-chips_last_prices[chip])/chips_last_prices[chip], 2)}%
-                                            ''', parse_mode = 'HTML')
-                                        except Exception as e:
-                                            pass
+Изменение за день: {round(100*(data[normal_keys[2]][chip]['close_price']-chips_last_prices[chip])/chips_last_prices[chip], 2)}%'''
+                                    await tg_bot.send_signal(message_to_send, 'tinkoff')
                             data.pop(normal_keys[0])
 
 if __name__ == "__main__":

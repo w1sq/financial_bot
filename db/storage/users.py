@@ -57,13 +57,14 @@ class UserStorage():
             INSERT INTO {self.__table} (id, role) VALUES ($1, $2)
         ''', user.user_id, user.role)
 
-    async def get_all_recipients(self) -> List[User]| None:
+    async def get_all_recipients(self, platform:str) -> List[User]| None:
+        platforms = {'tinkoff':1, 'binance':2, 'bks':3}
         data = await self._db.fetch(f'''
-            SELECT * FROM {self.__table} WHERE 
+            SELECT * FROM {self.__table} WHERE platforms LIKE '%{platforms[platform]}%'
         ''')
         if data is None:
             return None
-        return [User(user_data[0], user_data[1]) for user_data in data]
+        return [User(user_data[0], user_data[1], user_data[2], user_data[3]) for user_data in data]
 
     async def get_all_members(self) -> List[User]| None:
         data = await self._db.fetch(f'''
@@ -71,7 +72,7 @@ class UserStorage():
         ''')
         if data is None:
             return None
-        return [User(user_data[0], user_data[1]) for user_data in data]
+        return [User(user_data[0], user_data[1], user_data[2], user_data[3]) for user_data in data]
 
     async def get_user_amount(self) -> int:
         return await self._db.fetchval(f"SELECT COUNT(*) FROM {self.__table}")

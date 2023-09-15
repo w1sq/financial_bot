@@ -31,10 +31,10 @@ class TG_Bot():
         print('Bot has started')
         await self._dispatcher.start_polling()
 
-    async def send_signal(self, message:str):
-        for user in await self._user_storage.get_all_members():
+    async def send_signal(self, message:str, platform:str):
+        for user in await self._user_storage.get_all_recipients(platform):
             try:
-                await self._bot.send_message(user.user_id, message)
+                await self._bot.send_message(user.user_id, message, parse_mode='HTML')
             except Exception:
                 pass
 
