@@ -106,7 +106,7 @@ class UserStorage:
         data_types = {"candles": 1, "scarping": 2}
         data = await self._db.fetch(
             f"""
-            SELECT * FROM {self.__table} WHERE platforms LIKE '%{platforms[platform]}%' AND notifications = TRUE AND data_types LIKE '%{data_types[data_type]}%' AND min_volume < $1
+            SELECT * FROM {self.__table} WHERE platforms LIKE '%{platforms[platform]}%' AND notifications = TRUE AND data_types LIKE '%{data_types[data_type]}%' AND min_volume <= $1
         """,
             volume,
         )

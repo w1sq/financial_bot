@@ -9,8 +9,12 @@ from bot import TG_Bot
 from db import DB
 from db.storage import UserStorage
 from config import Config
-from market_tinkoff_days import market_review
-from market_tinkoff_scarping import market_review_scarping
+from markets.tinkoff.days import market_review
+from markets.tinkoff.scarping import market_review_scarping
+
+from markets.tinkoff.hours_nikita import market_review_nikita
+
+# from markets.tinkoff.minutes_nikita import market_review_nikita
 
 # from market_binance import Binance
 
@@ -47,11 +51,6 @@ class Launcher:
         self.user_storage = await self.init_db()
         self.tg_bot = TG_Bot(self.user_storage)
 
-    # async def listener():
-    #     while True:
-    #         try:
-    #             await send_message(await )
-
     async def main(self):
         """Bot startup function"""
         await self.tg_bot.init()
@@ -60,8 +59,9 @@ class Launcher:
     async def tasks_init(self):
         await self.create_bot()
         tasks = [
-            market_review_scarping(self.tg_bot),
+            # market_review_scarping(self.tg_bot),
             market_review(self.tg_bot),
+            market_review_nikita(self.tg_bot),
             self.main(),
         ]
         await asyncio.gather(*tasks)
