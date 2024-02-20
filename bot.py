@@ -41,12 +41,8 @@ class TG_Bot:
         print("Bot has started")
         await self._dispatcher.start_polling()
 
-    async def send_signal(
-        self, message: str, platform: str, data_type: str, volume: int
-    ):
-        for user in await self._user_storage.get_all_recipients(
-            platform, data_type, volume
-        ):
+    async def send_signal(self, message: str, strategy: str, volume: int):
+        for user in await self._user_storage.get_all_recipients(strategy, volume):
             try:
                 await self._bot.send_message(user.user_id, message, parse_mode="HTML")
             except Exception:
@@ -72,8 +68,7 @@ class TG_Bot:
                 InlineKeyboardButton("Рассылка", callback_data="notifications")
             )
             enabled_smile = "🔇"
-        platforms = {"Tinkoff": "1", "Binance": "2", "БКС": "3"}
-        data_types = {"Свечи": "1", "Скальпинг": "2"}
+        platforms = {"Никита": "1", "Андрей": "2", "Георгий": "3"}
         # for platform, code in platforms.items():
         #     if code in user.platforms:
         #         settings_keyboard.row(
@@ -87,22 +82,16 @@ class TG_Bot:
         #         )
         settings_keyboard.row(
             *[
-                InlineKeyboardButton(
-                    f"{enabled_smile} {platform}", callback_data=f"platform {code}"
+                (
+                    InlineKeyboardButton(
+                        f"{enabled_smile} {platform}", callback_data=f"strategy {code}"
+                    )
+                    if code in user.strategies
+                    else InlineKeyboardButton(
+                        platform, callback_data=f"strategy {code}"
+                    )
                 )
-                if code in user.platforms
-                else InlineKeyboardButton(platform, callback_data=f"platform {code}")
                 for platform, code in platforms.items()
-            ]
-        )
-        settings_keyboard.row(
-            *[
-                InlineKeyboardButton(
-                    f"{enabled_smile} {data_type}", callback_data=f"data_type {code}"
-                )
-                if code in user.data_types
-                else InlineKeyboardButton(data_type, callback_data=f"data_type {code}")
-                for data_type, code in data_types.items()
             ]
         )
         settings_keyboard.row(
@@ -120,27 +109,14 @@ class TG_Bot:
             Texts.settings, reply_markup=settings_keyboard, parse_mode="HTML"
         )
 
-    async def _platform(self, call: aiogram.types.CallbackQuery):
+    async def _strategy(self, call: aiogram.types.CallbackQuery):
         user = await self._user_storage.get_by_id(call.message.chat.id)
         code = call.data.split()[1]
-        if code in user.platforms:
-            user.platforms = user.platforms.replace(code, "")
+        if code in user.strategies:
+            user.strategies = user.strategies.replace(code, "")
         else:
-            user.platforms += code
-        await self._user_storage.update_platforms(user)
-        settings_keyboard = self._create_settings_keyboard(user)
-        await call.message.edit_text(
-            Texts.settings, reply_markup=settings_keyboard, parse_mode="HTML"
-        )
-
-    async def _data_type(self, call: aiogram.types.CallbackQuery):
-        user = await self._user_storage.get_by_id(call.message.chat.id)
-        code = call.data.split()[1]
-        if code in user.data_types:
-            user.data_types = user.data_types.replace(code, "")
-        else:
-            user.data_types += code
-        await self._user_storage.update_data_types(user)
+            user.strategies += code
+        await self._user_storage.update_strategies(user)
         settings_keyboard = self._create_settings_keyboard(user)
         await call.message.edit_text(
             Texts.settings, reply_markup=settings_keyboard, parse_mode="HTML"
@@ -210,10 +186,7 @@ class TG_Bot:
         )
 
         self._dispatcher.register_callback_query_handler(
-            self._platform, aiogram.dispatcher.filters.Text(startswith="platform ")
-        )
-        self._dispatcher.register_callback_query_handler(
-            self._data_type, aiogram.dispatcher.filters.Text(startswith="data_type ")
+            self._strategy, aiogram.dispatcher.filters.Text(startswith="strategy ")
         )
         self._dispatcher.register_callback_query_handler(
             self._notifications,

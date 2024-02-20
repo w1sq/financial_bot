@@ -190,8 +190,7 @@ async def fill_data(shares, client):
 async def send_message(tg_bot: TG_Bot, purchase):
     await tg_bot.send_signal(
         message=f"СТРАТЕГИЯ НИКИТЫ СИГНАЛ НА ПОКУПКУ\n\nПокупка {purchase['ticker']} {purchase['date_buy']+datetime.timedelta(hours=3):%d-%m-%Y %H:%M} по цене {purchase['price_buy']}",
-        platform="tinkoff",
-        data_type="candles",
+        strategy="nikita",
         volume=0,
     )
 

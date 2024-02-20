@@ -1,5 +1,5 @@
 from db.db import DB
-from typing import List
+from typing import List, Optional
 from dataclasses import dataclass
 
 
@@ -12,8 +12,7 @@ class User:
     user_id: int
     role: str
     notifications: bool = True
-    platforms: str = "123"
-    data_types: str = "12"
+    strategies: str = "123"
     min_volume: int = 0
 
 
@@ -30,20 +29,19 @@ class UserStorage:
                 id BIGINT PRIMARY KEY,
                 role TEXT,
                 notifications BOOLEAN DEFAULT TRUE,
-                platforms TEXT DEFAULT '123',
-                data_types TEXT DEFAULT '12',
+                strategies TEXT DEFAULT '123',
                 min_volume INT DEFAULT 0
             )
         """
         )
 
-    async def get_by_id(self, user_id: int) -> User | None:
+    async def get_by_id(self, user_id: int) -> Optional[User]:
         data = await self._db.fetchrow(
             f"SELECT * FROM {self.__table} WHERE id = $1", user_id
         )
         if data is None:
             return None
-        return User(data[0], data[1], data[2], data[3], data[4], data[5])
+        return User(data[0], data[1], data[2], data[3], data[4])
 
     async def promote_to_admin(self, user_id: int):
         await self._db.execute(
@@ -55,17 +53,10 @@ class UserStorage:
             f"UPDATE {self.__table} SET role = $1 WHERE id = $2", User.USER, user_id
         )
 
-    async def update_platforms(self, user: User):
+    async def update_strategies(self, user: User):
         await self._db.execute(
-            f"UPDATE {self.__table} SET platforms = $1 WHERE id = $2",
-            user.platforms,
-            user.user_id,
-        )
-
-    async def update_data_types(self, user: User):
-        await self._db.execute(
-            f"UPDATE {self.__table} SET data_types = $1 WHERE id = $2",
-            user.data_types,
+            f"UPDATE {self.__table} SET strategies = $1 WHERE id = $2",
+            user.strategies,
             user.user_id,
         )
 
@@ -99,14 +90,11 @@ class UserStorage:
             user.role,
         )
 
-    async def get_all_recipients(
-        self, platform: str, data_type: str, volume: int
-    ) -> List[User]:
-        platforms = {"tinkoff": 1, "binance": 2, "bks": 3}
-        data_types = {"candles": 1, "scarping": 2}
+    async def get_all_recipients(self, strategy: str, volume: int) -> List[User]:
+        strategies = {"nikita": 1, "andrey": 2, "george": 3}
         data = await self._db.fetch(
             f"""
-            SELECT * FROM {self.__table} WHERE platforms LIKE '%{platforms[platform]}%' AND notifications = TRUE AND data_types LIKE '%{data_types[data_type]}%' AND min_volume <= $1
+            SELECT * FROM {self.__table} WHERE strategies LIKE '%{strategies[strategy]}%' AND notifications = TRUE AND min_volume <= $1
         """,
             volume,
         )
@@ -119,7 +107,6 @@ class UserStorage:
                 user_data[2],
                 user_data[3],
                 user_data[4],
-                user_data[5],
             )
             for user_data in data
         ]
@@ -139,7 +126,6 @@ class UserStorage:
                 user_data[2],
                 user_data[3],
                 user_data[4],
-                user_data[5],
             )
             for user_data in data
         ]
