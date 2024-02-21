@@ -39,6 +39,7 @@ class StrategyConfig:
 
 data_bollinger: Dict[str, List[float]] = {}
 data_rsi: Dict[str, List[float]] = {}
+purchases: Dict[str, Dict] = {}
 
 # bollinger_indicators: Dict[str, Dict[datetime.datetime, float]] = {}
 # rsi_indicators: Dict[str, Dict[datetime.datetime, Tuple[float, float]]] = {}
@@ -80,6 +81,7 @@ def bollinger_and_rsi_data(ticker: str, candle_data: HistoricCandle) -> Optional
             * StrategyConfig.strategy_bollinger_range
         )
         and _rsi <= StrategyConfig.rsi_treshold
+        and not purchases[ticker]
     ):
         _purchase = {
             "date_buy": candle_data.time,
@@ -88,26 +90,35 @@ def bollinger_and_rsi_data(ticker: str, candle_data: HistoricCandle) -> Optional
             "price_sell": "-",
             "profit": "-",
         }
-
-        # if (
-        #     candle_close
-        #     > _purchase["price_buy"] * (100 + StrategyConfig.take_profit) / 100
-        #     and _purchase["profit"] == "-"
-        # ):
-        #     _purchase["date_sell"] = candle_data.time
-        #     _purchase["price_sell"] = candle_close
-        #     _purchase["profit"] = candle_close - _purchase["price_buy"]
-
-        # if (
-        #     candle_close
-        #     < _purchase["price_buy"] * (100 - StrategyConfig.stop_los) / 100
-        #     and _purchase["profit"] == "-"
-        # ):
-        #     _purchase["date_sell"] = candle_data.time
-        #     _purchase["price_sell"] = candle_close
-        #     _purchase["profit"] = candle_close - _purchase["price_buy"]
         _purchase["ticker"] = ticker
-        return _purchase
+        purchases[ticker] = _purchase
+    elif purchases[ticker]:
+        _purchase = purchases[ticker]
+        if (
+            float(quotation_to_decimal(candle_data.open))
+            > float(_purchase["price_buy"]) * (100 + StrategyConfig.take_profit) / 100
+            and _purchase["profit"] == "-"
+        ):
+            _purchase["date_sell"] = candle_data.time
+            _purchase["price_sell"] = float(quotation_to_decimal(candle_data.open))
+            _purchase["profit"] = (
+                float(quotation_to_decimal(candle_data.open)) - _purchase["price_buy"]
+            )
+            purchases[ticker] = {}
+            return _purchase
+
+        if (
+            float(quotation_to_decimal(candle_data.open))
+            < float(_purchase["price_buy"]) * (100 - StrategyConfig.stop_los) / 100
+            and _purchase["profit"] == "-"
+        ):
+            _purchase["date_sell"] = candle_data.time
+            _purchase["price_sell"] = float(quotation_to_decimal(candle_data.open))
+            _purchase["profit"] = (
+                float(quotation_to_decimal(candle_data.open)) - _purchase["price_buy"]
+            )
+            purchases[ticker] = {}
+            return _purchase
     return None
 
 
@@ -164,10 +175,11 @@ def get_whole_volume(trade_dict: dict) -> float:
 
 
 async def fill_data(shares, client):
-    purchases = []
+    trades = []
     for share in shares:
         data_bollinger[share["ticker"]] = []
         data_rsi[share["ticker"]] = []
+        purchases[share["ticker"]] = {}
         # bollinger_indicators[share["ticker"]] = {}
         # rsi_indicators[share["ticker"]] = {}
     for share in shares:
@@ -180,16 +192,16 @@ async def fill_data(shares, client):
             - datetime.timedelta(days=2),
             interval=CandleInterval.CANDLE_INTERVAL_1_MIN,
         ):
-            purchase = bollinger_and_rsi_data(share["ticker"], candle)
-            if purchase is not None:
-                print(purchase)
-                purchases.append(purchase)
-    return purchases
+            trade = bollinger_and_rsi_data(share["ticker"], candle)
+            if trade is not None:
+                print(trade)
+                trades.append(trade)
+    return trades
 
 
-async def send_message(tg_bot: TG_Bot, purchase):
+async def send_message(tg_bot: TG_Bot, trade: Dict):
     await tg_bot.send_signal(
-        message=f"СТРАТЕГИЯ НИКИТЫ СИГНАЛ НА ПОКУПКУ\n\nПокупка {purchase['ticker']} {purchase['date_buy']+datetime.timedelta(hours=3):%d-%m-%Y %H:%M} по цене {purchase['price_buy']}",
+        message=f"СТРАТЕГИЯ НИКИТЫ\n\nПокупка {trade['ticker']} {trade['date_buy']+datetime.timedelta(hours=3):%d-%m-%Y %H:%M} по цене {trade['price_buy']}\n\nПродажа {trade['date_sell']+datetime.timedelta(hours=3):%d-%m-%Y %H:%M} по цене {trade['price_sell']}\n\nПрибыль: {trade['profit']}",
         strategy="nikita",
         volume=0,
     )
@@ -198,10 +210,9 @@ async def send_message(tg_bot: TG_Bot, purchase):
 async def market_review_nikita(tg_bot: TG_Bot):
     shares = await get_all_shares()
     async with AsyncClient(TOKEN) as client:
-        purchases = await fill_data(shares, client)
-        print(purchases)
-        for purchase in purchases:
-            await send_message(tg_bot, purchase)
+        trades = await fill_data(shares, client)
+        for trade in trades:
+            await send_message(tg_bot, trade)
         await asyncio.sleep(30)
         current_minute = datetime.datetime.now().minute
         while True:
@@ -217,9 +228,9 @@ async def market_review_nikita(tg_bot: TG_Bot):
                         candles.append((share["ticker"], candle))
                         await asyncio.sleep(0.3)
                 for candle in candles:
-                    purchase = bollinger_and_rsi_data(candle[0], candle[1])
-                    if purchase is not None:
-                        await send_message(tg_bot, purchase)
+                    trade = bollinger_and_rsi_data(candle[0], candle[1])
+                    if trade is not None:
+                        await send_message(tg_bot, trade)
                 if current_minute == 59:
                     current_minute = 0
                 else:

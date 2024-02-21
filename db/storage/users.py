@@ -94,7 +94,7 @@ class UserStorage:
         strategies = {"nikita": 1, "andrey": 2, "george": 3}
         data = await self._db.fetch(
             f"""
-            SELECT * FROM {self.__table} WHERE strategies LIKE '%{strategies[strategy]}%' AND notifications = TRUE AND min_volume <= $1
+            SELECT * FROM {self.__table} WHERE strategies LIKE '%{strategies[strategy]}%' AND notifications = TRUE AND min_volume <= $1 OR min_volume = 0
         """,
             volume,
         )

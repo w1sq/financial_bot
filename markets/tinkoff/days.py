@@ -186,7 +186,7 @@ async def market_review(tg_bot: TG_Bot):
 Цена: {float(quotation_to_decimal(candle.close))} ₽"""
                                 # print(message_to_send)
                                 await tg_bot.send_signal(
-                                    message_to_send, "andrey", candle.volume
+                                    message_to_send, "andrey", money_volume
                                 )
                 await asyncio.sleep(20 * 60 * 60)
             else:
