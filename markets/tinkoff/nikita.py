@@ -155,7 +155,7 @@ async def get_ticker_by_figi(figi: str) -> str:
 
 
 # TOKEN = "t.nb6zNANS5GyESI_e_9ledD8iWDqVpgEK9ewrQu6Orr6F9N-NNdklR5r9VkwFs8RXiPzkXgxeUtcGSf_LxFgXAw" #readonly
-TOKEN = "t.Gb6EBFHfF-eQqwR8LXYn6l7A5AM6aFh1vX9QMOmrZJ2V6OEhZdNZuW4dpThKlEH504oN2Og6HLdMXyltEBK5QQ"  # full access
+TOKEN = "t.b--pMCWrjEHHBKOZzAfeRbw8OHJdJRWX4AtVf3EUXQa7tuuYt5cEpVE6MneVZ-SeC1-UgiAmf2jNJ_Fys0Y_JA"  # full access
 working_hours = range(10, 24)
 
 
@@ -177,7 +177,7 @@ async def fill_data(shares, client):
                 datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc),
                 datetime.time(6, 0),
             ).replace(tzinfo=datetime.timezone.utc)
-            - datetime.timedelta(days=1),
+            - datetime.timedelta(days=2),
             interval=CandleInterval.CANDLE_INTERVAL_1_MIN,
         ):
             purchase = bollinger_and_rsi_data(share["ticker"], candle)

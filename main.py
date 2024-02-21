@@ -10,11 +10,12 @@ from db import DB
 from db.storage import UserStorage
 from config import Config
 
-# from markets.tinkoff.days import market_review
 # from markets.tinkoff.scarping import market_review_scarping
 
-from markets.tinkoff.hours_nikita import market_review_nikita
+from markets.tinkoff.nikita import market_review_nikita
 from markets.tinkoff.andrey import market_review_andrey
+from markets.tinkoff.george import market_review_george
+from markets.tinkoff.days import market_review
 
 
 class Launcher:
@@ -58,9 +59,10 @@ class Launcher:
         await self.create_bot()
         tasks = [
             # market_review_scarping(self.tg_bot),
-            # market_review(self.tg_bot),
+            market_review(self.tg_bot),
             market_review_nikita(self.tg_bot),
             market_review_andrey(self.tg_bot),
+            market_review_george(self.tg_bot),
             self.main(),
         ]
         await asyncio.gather(*tasks)

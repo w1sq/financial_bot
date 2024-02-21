@@ -221,7 +221,7 @@ async def fill_data(shares, client):
                 datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc),
                 datetime.time(6, 0),
             ).replace(tzinfo=datetime.timezone.utc)
-            - datetime.timedelta(days=12),
+            - datetime.timedelta(days=6),
             interval=CandleInterval.CANDLE_INTERVAL_DAY,
         ):
             purchase = analisys(share["ticker"], candle)
@@ -247,7 +247,8 @@ async def market_review_andrey(tg_bot: TG_Bot):
         for purchase in purchases:
             await send_message(tg_bot, purchase)
         await asyncio.sleep(30)
-        work_hour = 1
+        work_hour = datetime.datetime.now().hour
+        # work_hour = 1
         while True:
             if datetime.datetime.now().hour == work_hour:
                 candles = []
