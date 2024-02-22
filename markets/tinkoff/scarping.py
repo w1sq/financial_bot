@@ -13,7 +13,8 @@ from tinkoff.invest import (
 import tinkoff
 
 from bot import TG_Bot
-from trade_instrument import trade
+from markets.tinkoff.utils import trade
+from config import Config
 
 blue_chips = {
     "BBG004S68B31": "ALRS",
@@ -69,14 +70,11 @@ chips_lots = {
 }
 
 
-TOKEN = "t.Gb6EBFHfF-eQqwR8LXYn6l7A5AM6aFh1vX9QMOmrZJ2V6OEhZdNZuW4dpThKlEH504oN2Og6HLdMXyltEBK5QQ"
-
-
 def get_whole_volume(trade_dict: dict) -> float:
     return trade_dict["buy"] + trade_dict["sell"]
 
 
-def money_to_float(money: MoneyValue):
+def money_to_float(money: MoneyValue) -> float:
     return float(money.units + money.nano / 10**9)
 
 
@@ -90,9 +88,7 @@ async def get_last_prices(tinkoff_client: AsyncClient) -> dict:
             async for candle in tinkoff_client.get_all_candles(
                 figi=figi,
                 from_=datetime.datetime.now() - datetime.timedelta(days=days_ago),
-                # from_ = datetime.datetime(2023, 8, 7),
                 to=datetime.datetime.now(),
-                # to = datetime.datetime(2023, 8, 8),
                 interval=CandleInterval.CANDLE_INTERVAL_1_MIN,
             ):
                 if candle.close:
@@ -106,7 +102,6 @@ async def get_last_prices(tinkoff_client: AsyncClient) -> dict:
 
 
 async def market_review_scarping(tg_bot: TG_Bot):
-    # async def market_review():
     async def request_iterator():
         yield MarketDataRequest(
             subscribe_trades_request=SubscribeTradesRequest(
@@ -122,7 +117,7 @@ async def market_review_scarping(tg_bot: TG_Bot):
         while True:
             await asyncio.sleep(1)
 
-    async with AsyncClient(TOKEN) as client:
+    async with AsyncClient(Config.ANDREY_TOKEN) as client:
         while True:
             try:
                 data: dict[str, dict[str, dict]] = {}
@@ -296,16 +291,3 @@ async def market_review_scarping(tg_bot: TG_Bot):
                                 data.pop(normal_keys[0])
             except tinkoff.invest.exceptions.AioRequestError:
                 pass
-
-
-# if __name__ == "__main__":
-# with Client(TOKEN) as tinkoff_client:
-#     for figi in blue_chips.keys():
-#         instruments = tinkoff_client.instruments
-#         for method in ["share_by"]:
-#             item = getattr(instruments, method)(
-#                 id_type=tinkoff.invest.services.InstrumentIdType.INSTRUMENT_ID_TYPE_FIGI,
-#                 id=figi,
-#             ).instrument
-#             print(item.ticker, item.lot)
-# asyncio.run(market_review())

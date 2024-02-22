@@ -3,13 +3,14 @@ from typing import Optional, List, Dict, Tuple
 
 import pandas
 import asyncio
-from tinkoff.invest.services import InstrumentsService
 from tinkoff.invest.utils import quotation_to_decimal, now
 from tinkoff.invest import AsyncClient, CandleInterval, HistoricCandle
 
 from bot import TG_Bot
+from config import Config
+from markets.tinkoff.utils import get_all_shares
 
-configs = {
+strategy_configs = {
     "BR": {
         "money_to_buy": 1000000,  # стартовый капитал
         "sma_frame(close)": 5600,  # скользящая средняя (по клозу)
@@ -122,29 +123,27 @@ configs = {
     },
 }
 
+# declaration of utility containers
+
 strategy_data: Dict[str, List[HistoricCandle]] = {}
-
-
 purchases: Dict[str, Dict] = {}
-
-
 in_order_long: Dict[str, bool] = {}
 in_order_short: Dict[str, bool] = {}
 ema: Dict[str, float] = {}
 sma_sum: Dict[str, float] = {}
 
 
-def strategy(ticker: str, candle_data: HistoricCandle):
-    local_config = configs[ticker]
+def strategy(ticker: str, candle_data: HistoricCandle) -> Optional[List[Dict]]:
+    local_config = strategy_configs[ticker]
     local_data = strategy_data[ticker]
     local_in_order_long = in_order_long[ticker]
     local_in_order_short = in_order_short[ticker]
-    _capital = float(local_config["money_to_buy"])
-    _capital_max = _capital
+    capital = float(local_config["money_to_buy"])
+    capital_max = capital
     local_ema = ema[ticker]
     local_sma_sum = sma_sum[ticker]
-    _purchase = purchases[ticker]
-    _purchase_list = []
+    local_purchase = purchases[ticker]
+    purchase_list = []
 
     # отсупаем до напитания индикаторов - _config['sma_frame(close)']
     # считаем сумму для простой скользящей (по закрытию)
@@ -181,16 +180,16 @@ def strategy(ticker: str, candle_data: HistoricCandle):
         local_sma_sum = local_sma_sum / local_config["sma_frame(close)"]
 
         # индикатор экспоненциальную среднюю (по максимуму бара)
-        _weight_factor = 2 / (local_config["ema_frame(maximum)"] + 1)
-        local_ema = local_ema + _weight_factor * (
+        weight_factor = 2 / (local_config["ema_frame(maximum)"] + 1)
+        local_ema = local_ema + weight_factor * (
             float(quotation_to_decimal(local_data[-1].high)) - local_ema
         )
 
         # проверяем условие, что хватает денег на лот
-        _lot_price = float(quotation_to_decimal(local_data[-1].close)) * float(
+        lot_price = float(quotation_to_decimal(local_data[-1].close)) * float(
             local_config["shares_in_lot"]
         )
-        if _capital > _lot_price:
+        if capital > lot_price:
             # стратегия с реинвестированием
             if local_config["reinvestition"]:
                 # лонг
@@ -202,10 +201,10 @@ def strategy(ticker: str, candle_data: HistoricCandle):
                         and not (local_in_order_short)
                     ):
 
-                        _purchase = long_input(
+                        local_purchase = long_input(
                             candle_data,
                             local_config,
-                            _capital,
+                            capital,
                             local_sma_sum,
                             local_ema,
                             0,
@@ -217,19 +216,19 @@ def strategy(ticker: str, candle_data: HistoricCandle):
                         and (local_in_order_long)
                         and not (local_in_order_short)
                     ):
-                        _purchase, _capital, _capital_max = long_output(
+                        local_purchase, capital, capital_max = long_output(
                             candle_data,
-                            _purchase,
+                            local_purchase,
                             local_config,
                             local_sma_sum,
                             local_ema,
-                            _capital_max,
-                            _capital_max,
+                            capital_max,
+                            capital_max,
                             0,
                         )
-                        _purchase["ticker"] = ticker
-                        _purchase_list.append(_purchase)
-                        _purchase = {}
+                        local_purchase["ticker"] = ticker
+                        purchase_list.append(local_purchase)
+                        local_purchase = {}
                         local_in_order_long = False
                 # шорт
                 if local_config["short_flag"]:
@@ -240,10 +239,10 @@ def strategy(ticker: str, candle_data: HistoricCandle):
                         and not (local_in_order_long)
                     ):
                         print("Заходим в лонг")
-                        _purchase = short_input(
+                        local_purchase = short_input(
                             candle_data,
                             local_config,
-                            _capital,
+                            capital,
                             local_sma_sum,
                             local_ema,
                             0,
@@ -255,27 +254,27 @@ def strategy(ticker: str, candle_data: HistoricCandle):
                         and local_in_order_short
                         and not (local_in_order_long)
                     ):
-                        _purchase, _capital, _capital_max = short_output(
+                        local_purchase, capital, capital_max = short_output(
                             candle_data,
-                            _purchase,
+                            local_purchase,
                             local_config,
                             local_sma_sum,
                             local_ema,
-                            _capital,
-                            _capital_max,
+                            capital,
+                            capital_max,
                             # _capital_max,
                             0,
                         )
-                        _purchase["ticker"] = ticker
-                        _purchase_list.append(_purchase)
-                        _purchase = {}
+                        local_purchase["ticker"] = ticker
+                        purchase_list.append(local_purchase)
+                        local_purchase = {}
                         local_in_order_short = False
             # стратегия без реинвестирования
             else:
                 # деньги, не участвующие в сделке
                 _frozen_money = 0
-                if _capital > float(local_config["money_to_buy"]):
-                    _frozen_money = _capital - float(local_config["money_to_buy"])
+                if capital > float(local_config["money_to_buy"]):
+                    _frozen_money = capital - float(local_config["money_to_buy"])
                 # лонг
                 if local_config["long_flag"]:
                     # заходим в лонг
@@ -284,10 +283,10 @@ def strategy(ticker: str, candle_data: HistoricCandle):
                         and not (local_in_order_long)
                         and not (local_in_order_short)
                     ):
-                        _purchase = long_input(
+                        local_purchase = long_input(
                             candle_data,
                             local_config,
-                            _capital,
+                            capital,
                             local_sma_sum,
                             local_ema,
                             _frozen_money,
@@ -299,19 +298,19 @@ def strategy(ticker: str, candle_data: HistoricCandle):
                         and (local_in_order_long)
                         and not (local_in_order_short)
                     ):
-                        _purchase, _capital, _capital_max = long_output(
+                        local_purchase, capital, capital_max = long_output(
                             candle_data,
-                            _purchase,
+                            local_purchase,
                             local_config,
                             local_sma_sum,
                             local_ema,
-                            _capital_max,
+                            capital_max,
                             local_config["money_to_buy"],
                             _frozen_money,
                         )
-                        _purchase["ticker"] = ticker
-                        _purchase_list.append(_purchase)
-                        _purchase = {}
+                        local_purchase["ticker"] = ticker
+                        purchase_list.append(local_purchase)
+                        local_purchase = {}
                         local_in_order_long = False
                 # шорт
                 if local_config["short_flag"]:
@@ -321,10 +320,10 @@ def strategy(ticker: str, candle_data: HistoricCandle):
                         and not (local_in_order_short)
                         and not (local_in_order_long)
                     ):
-                        _purchase = short_input(
+                        local_purchase = short_input(
                             candle_data,
                             local_config,
-                            _capital,
+                            capital,
                             local_sma_sum,
                             local_ema,
                             _frozen_money,
@@ -336,19 +335,19 @@ def strategy(ticker: str, candle_data: HistoricCandle):
                         and local_in_order_short
                         and not (local_in_order_long)
                     ):
-                        _purchase, _capital, _capital_max = short_output(
+                        local_purchase, capital, capital_max = short_output(
                             candle_data,
-                            _purchase,
+                            local_purchase,
                             local_config,
                             local_sma_sum,
                             local_ema,
-                            _capital,
-                            _capital_max,
+                            capital,
+                            capital_max,
                             local_config["money_to_buy"],
                         )
-                        _purchase["ticker"] = ticker
-                        _purchase_list.append(_purchase)
-                        _purchase = {}
+                        local_purchase["ticker"] = ticker
+                        purchase_list.append(local_purchase)
+                        local_purchase = {}
                         local_in_order_short = False
 
     # добавляем последнюю сделку, если она не была закрыта ранее
@@ -361,14 +360,21 @@ def strategy(ticker: str, candle_data: HistoricCandle):
     sma_sum[ticker] = local_sma_sum
     in_order_long[ticker] = local_in_order_long
     in_order_short[ticker] = local_in_order_short
-    purchases[ticker] = _purchase
-    if _purchase_list:
-        return _purchase_list
+    purchases[ticker] = local_purchase
+    if purchase_list:
+        return purchase_list
     else:
         return None
 
 
-def long_input(_cur_data, _config, _cur_capital, _sma, _ema, _cur_frozen_money):
+def long_input(
+    _cur_data: HistoricCandle,
+    _config: Dict,
+    _cur_capital: float,
+    _sma,
+    _ema,
+    _cur_frozen_money,
+) -> Dict:
     _purchase_temp = {}
     _cur_lot_prize = float(quotation_to_decimal(_cur_data.open)) * float(
         _config["shares_in_lot"]
@@ -534,62 +540,7 @@ def short_output(
     return _cur_purchase, _capital, _capital_max
 
 
-async def get_all_shares():
-    async with AsyncClient(TOKEN) as client:
-        instruments: InstrumentsService = client.instruments
-        shares = []
-        for method in ["shares"]:
-            for item in (await getattr(instruments, method)()).instruments:
-                if (
-                    item.exchange in ["MOEX", "MOEX_EVENING_WEEKEND"]
-                    and item.ticker in configs.keys()
-                ):
-                    shares.append(
-                        {
-                            "name": item.name,
-                            "ticker": item.ticker,
-                            "class_code": item.class_code,
-                            "figi": item.figi,
-                            "uid": item.uid,
-                            "type": method,
-                            "min_price_increment": float(
-                                quotation_to_decimal(item.min_price_increment)
-                            ),
-                            "scale": 9 - len(str(item.min_price_increment.nano)) + 1,
-                            "lot": item.lot,
-                            "api_trade_available_flag": item.api_trade_available_flag,
-                            "currency": item.currency,
-                            "exchange": item.exchange,
-                            "buy_available_flag": item.buy_available_flag,
-                            "sell_available_flag": item.sell_available_flag,
-                            "short_enabled_flag": item.short_enabled_flag,
-                            "klong": float(quotation_to_decimal(item.klong)),
-                            "kshort": float(quotation_to_decimal(item.kshort)),
-                        }
-                    )
-        return shares
-
-
-async def get_ticker_by_figi(figi: str) -> str:
-    async with AsyncClient(TOKEN) as client:
-        instruments: InstrumentsService = client.instruments
-        for method in ["shares"]:
-            for item in (await getattr(instruments, method)()).instruments:
-                if item.exchange in ["MOEX", "MOEX_EVENING_WEEKEND"]:
-                    if item.figi == figi:
-                        return item.ticker
-
-
-# TOKEN = "t.nb6zNANS5GyESI_e_9ledD8iWDqVpgEK9ewrQu6Orr6F9N-NNdklR5r9VkwFs8RXiPzkXgxeUtcGSf_LxFgXAw" #readonly
-TOKEN = "t.aVvt9V0XFMyQFrfVQgSJsxtNjDycKY-vgV--mEsk_MBZY1n-lWH58-1U2dMvw35ztBASwwakPdqcb1IRMhvwLg"  # full access
-working_hours = range(10, 24)
-
-
-def get_whole_volume(trade_dict: dict) -> float:
-    return trade_dict["buy"] + trade_dict["sell"]
-
-
-async def fill_data(shares, client):
+async def fill_data(shares: List[Dict], client: AsyncClient) -> List[Dict]:
     local_purchases = []
     for share in shares:
         strategy_data[share["ticker"]] = []
@@ -627,8 +578,8 @@ async def send_message(tg_bot: TG_Bot, purchase):
 
 
 async def market_review_george(tg_bot: TG_Bot):
-    shares = await get_all_shares()
-    async with AsyncClient(TOKEN) as client:
+    async with AsyncClient(Config.GEORGE_TOKEN) as client:
+        shares = await get_all_shares(client, strategy_configs.keys())
         local_purchases = await fill_data(shares, client)
         for purchase in local_purchases:
             await send_message(tg_bot, purchase)

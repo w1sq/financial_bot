@@ -3,28 +3,12 @@ from typing import Optional, List, Dict, Tuple
 
 import pandas
 import asyncio
-from tinkoff.invest.services import InstrumentsService
 from tinkoff.invest.utils import quotation_to_decimal, now
 from tinkoff.invest import AsyncClient, CandleInterval, HistoricCandle
 
 from bot import TG_Bot
-
-
-def calculate_bollinger_bands(data, window=20):
-    sma = data.rolling(window=window).mean()
-    std = data.rolling(window=window).std()
-    return sma.iloc[-1], std.iloc[-1]
-
-
-def calculate_rsi(data, period=14):
-    delta = data.diff()
-    up = delta.clip(lower=0)
-    down = -1 * delta.clip(upper=0)
-    ema_up = up.ewm(com=period - 1, adjust=False).mean()
-    ema_down = down.ewm(com=period - 1, adjust=False).mean()
-    rs = ema_up / ema_down
-    rsi = 100 - (100 / (1 + rs))
-    return rsi.iloc[-1]
+from config import Config
+from markets.tinkoff.utils import get_all_shares
 
 
 class StrategyConfig:
@@ -37,12 +21,28 @@ class StrategyConfig:
     stop_los = 1
 
 
+# declaration of utility containers
+
 data_bollinger: Dict[str, List[float]] = {}
 data_rsi: Dict[str, List[float]] = {}
 purchases: Dict[str, Dict] = {}
 
-# bollinger_indicators: Dict[str, Dict[datetime.datetime, float]] = {}
-# rsi_indicators: Dict[str, Dict[datetime.datetime, Tuple[float, float]]] = {}
+
+def calculate_bollinger_bands(data: pandas.Series, window=20) -> Tuple[float, float]:
+    sma = data.rolling(window=window).mean()
+    std = data.rolling(window=window).std()
+    return sma.iloc[-1], std.iloc[-1]
+
+
+def calculate_rsi(data: pandas.Series, period=14) -> float:
+    delta = data.diff()
+    up = delta.clip(lower=0)
+    down = -1 * delta.clip(upper=0)
+    ema_up = up.ewm(com=period - 1, adjust=False).mean()
+    ema_down = down.ewm(com=period - 1, adjust=False).mean()
+    rs = ema_up / ema_down
+    rsi = 100 - (100 / (1 + rs))
+    return rsi.iloc[-1]
 
 
 def bollinger_and_rsi_data(ticker: str, candle_data: HistoricCandle) -> Optional[Dict]:
@@ -68,9 +68,6 @@ def bollinger_and_rsi_data(ticker: str, candle_data: HistoricCandle) -> Optional
 
     _avarege, _sko = calculate_bollinger_bands(pandas.Series(local_data_bollinger))
     _rsi = calculate_rsi(pandas.Series(local_data_rsi))
-
-    # bollinger_indicators[ticker][candle_data.time] = (_avarege, _sko)
-    # rsi_indicators[ticker][candle_data.time] = _rsi
 
     if (
         candle_close
@@ -122,66 +119,12 @@ def bollinger_and_rsi_data(ticker: str, candle_data: HistoricCandle) -> Optional
     return None
 
 
-async def get_all_shares():
-    async with AsyncClient(TOKEN) as client:
-        instruments: InstrumentsService = client.instruments
-        shares = []
-        for method in ["shares"]:
-            for item in (await getattr(instruments, method)()).instruments:
-                if item.exchange in ["MOEX", "MOEX_EVENING_WEEKEND"]:
-                    shares.append(
-                        {
-                            "name": item.name,
-                            "ticker": item.ticker,
-                            "class_code": item.class_code,
-                            "figi": item.figi,
-                            "uid": item.uid,
-                            "type": method,
-                            "min_price_increment": float(
-                                quotation_to_decimal(item.min_price_increment)
-                            ),
-                            "scale": 9 - len(str(item.min_price_increment.nano)) + 1,
-                            "lot": item.lot,
-                            "api_trade_available_flag": item.api_trade_available_flag,
-                            "currency": item.currency,
-                            "exchange": item.exchange,
-                            "buy_available_flag": item.buy_available_flag,
-                            "sell_available_flag": item.sell_available_flag,
-                            "short_enabled_flag": item.short_enabled_flag,
-                            "klong": float(quotation_to_decimal(item.klong)),
-                            "kshort": float(quotation_to_decimal(item.kshort)),
-                        }
-                    )
-        return shares
-
-
-async def get_ticker_by_figi(figi: str) -> str:
-    async with AsyncClient(TOKEN) as client:
-        instruments: InstrumentsService = client.instruments
-        for method in ["shares"]:
-            for item in (await getattr(instruments, method)()).instruments:
-                if item.exchange in ["MOEX", "MOEX_EVENING_WEEKEND"]:
-                    if item.figi == figi:
-                        return item.ticker
-
-
-# TOKEN = "t.nb6zNANS5GyESI_e_9ledD8iWDqVpgEK9ewrQu6Orr6F9N-NNdklR5r9VkwFs8RXiPzkXgxeUtcGSf_LxFgXAw" #readonly
-TOKEN = "t.b--pMCWrjEHHBKOZzAfeRbw8OHJdJRWX4AtVf3EUXQa7tuuYt5cEpVE6MneVZ-SeC1-UgiAmf2jNJ_Fys0Y_JA"  # full access
-working_hours = range(10, 24)
-
-
-def get_whole_volume(trade_dict: dict) -> float:
-    return trade_dict["buy"] + trade_dict["sell"]
-
-
-async def fill_data(shares, client):
+async def fill_data(shares: List[Dict], client: AsyncClient) -> List[Dict]:
     trades = []
     for share in shares:
         data_bollinger[share["ticker"]] = []
         data_rsi[share["ticker"]] = []
         purchases[share["ticker"]] = {}
-        # bollinger_indicators[share["ticker"]] = {}
-        # rsi_indicators[share["ticker"]] = {}
     for share in shares:
         async for candle in client.get_all_candles(
             figi=share["figi"],
@@ -208,8 +151,8 @@ async def send_message(tg_bot: TG_Bot, trade: Dict):
 
 
 async def market_review_nikita(tg_bot: TG_Bot):
-    shares = await get_all_shares()
-    async with AsyncClient(TOKEN) as client:
+    async with AsyncClient(Config.NIKITA_TOKEN) as client:
+        shares = await get_all_shares(client)
         trades = await fill_data(shares, client)
         for trade in trades:
             await send_message(tg_bot, trade)
@@ -217,7 +160,10 @@ async def market_review_nikita(tg_bot: TG_Bot):
         current_minute = datetime.datetime.now().minute
         while True:
             time_now = datetime.datetime.now()
-            if time_now.hour in working_hours and current_minute == time_now.minute:
+            if (
+                time_now.hour in Config.MOEX_WORKING_HOURS
+                and current_minute == time_now.minute
+            ):
                 candles = []
                 for share in shares:
                     async for candle in client.get_all_candles(

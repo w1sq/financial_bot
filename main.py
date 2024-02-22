@@ -3,8 +3,6 @@
 import asyncio
 import aiogram
 
-# import aioschedule as schedule
-
 from bot import TG_Bot
 from db import DB
 from db.storage import UserStorage
@@ -13,9 +11,9 @@ from config import Config
 # from markets.tinkoff.scarping import market_review_scarping
 
 from markets.tinkoff.nikita import market_review_nikita
-from markets.tinkoff.andrey import market_review_andrey
+from markets.tinkoff.andrey_absorbation import market_review_andrey
 from markets.tinkoff.george import market_review_george
-from markets.tinkoff.days import market_review
+from markets.tinkoff.andrey_candles import market_review
 
 
 class Launcher:
@@ -39,12 +37,6 @@ class Launcher:
         self.user_storage = UserStorage(self.db)
         await self.user_storage.init()
         return self.user_storage
-
-    # async def check_schedule():
-    #     '''Aioschedule startup'''
-    #     while True:
-    #         await schedule.run_pending()
-    #         await asyncio.sleep(1)
 
     async def create_bot(self):
         self.user_storage = await self.init_db()
@@ -70,12 +62,5 @@ class Launcher:
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    # queue = asyncio.Queue()
     launcher = Launcher()
-    # loop.run_until_complete(launcher.create_bot())
-    # # binance = Binance(launcher.tg_bot, loop)
-    # # loop.create_task(market_review(launcher.tg_bot))
-    # loop.create_task(market_review_scarping(launcher.tg_bot))
-    # # loop.create_task(binance.binance_review())
-    # loop.run_until_complete(launcher.main())
     asyncio.run(launcher.tasks_init())

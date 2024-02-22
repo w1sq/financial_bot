@@ -16,7 +16,7 @@ import tinkoff
 
 from bot import TG_Bot
 from db.storage import UserStorage
-from candle_model import candle_type_analysis
+from markets.tinkoff.candle_model import candle_type_analysis
 
 blue_chips = {
     "BBG004S68B31": "ALRS",

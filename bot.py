@@ -69,17 +69,6 @@ class TG_Bot:
             )
             enabled_smile = "🔇"
         platforms = {"Никита": "1", "Андрей": "2", "Георгий": "3"}
-        # for platform, code in platforms.items():
-        #     if code in user.platforms:
-        #         settings_keyboard.row(
-        #             InlineKeyboardButton(
-        #                 f"{enabled_smile} {platform}", callback_data=f"platform {code}"
-        #             )
-        #         )
-        #     else:
-        #         settings_keyboard.row(
-        #             InlineKeyboardButton(platform, callback_data=f"platform {code}")
-        #         )
         settings_keyboard.row(
             *[
                 (

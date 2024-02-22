@@ -2,11 +2,15 @@ import datetime
 from typing import Optional, List, Dict, Tuple
 
 import asyncio
-from tinkoff.invest.services import InstrumentsService
 from tinkoff.invest.utils import quotation_to_decimal, now
 from tinkoff.invest import AsyncClient, CandleInterval, HistoricCandle
 
 from bot import TG_Bot
+from config import Config
+from markets.tinkoff.utils import get_all_shares
+
+
+# declaration of utility containers
 
 data: Dict[str, List[Tuple[HistoricCandle, float]]] = {}
 
@@ -20,40 +24,6 @@ class StrategyConfig:
     volume = 0  # поизучать
     comission = 0.05  # в процентах
     money_in_order = 100000  # виртуальная сумма для сделки
-
-
-# def absorbation_data(input_link):
-#     _data = []
-
-#     f = open("files_for_strategy/absorbation/{}".format(input_link), "r")
-#     for line in f:
-#         _slovar = {}
-#         _strok = line.split(", ")
-#         for item in _strok:
-#             _slovar[item.split(": ")[0][1:-1]] = (
-#                 item.split(": ")[1].replace("'", "").replace("\n", "")
-#             )
-#         _data.append(_slovar)
-#     f.close()
-
-#     _log, _results_share, _results_money, _locked_money = analisys(_data)
-
-#     f = open(
-#         "strategy_log_files/absorbation_results/{}".format("analys" + input_link),
-#         "w",
-#         encoding="utf-8",
-#     )
-#     for elem in _log:
-#         strok = ""
-#         for key, val in elem.items():
-#             strok += key + " " + str(val) + "; "
-#         f.write(strok + "\n")
-#     f.write("\n")
-#     f.write("Results(money):" + "\n")
-#     for key, val in _results_money.items():
-#         f.write(key + " " + str(val) + "\n")
-#     f.close()
-#     return
 
 
 def analisys(ticker: str, candle_data: HistoricCandle) -> Optional[Dict]:
@@ -124,94 +94,14 @@ def analisys(ticker: str, candle_data: HistoricCandle) -> Optional[Dict]:
 
 
 # индикатор того, что рынок до появления сигнала - падающий
-def falling_indicator(input_list):
+def falling_indicator(input_list: List[float]) -> bool:
     return (
         sum(input_list) / len(input_list) >= input_list[-1]
     )  # рынок "падающий" - если текущая цена ниже среднего за falling_indicator_frame_count дней
 
 
-def change_order_border(cur_price, take_profit, stop_los):
-    return (
-        cur_price * (100 + take_profit) / 100,
-        cur_price * (100 - stop_los) / 100,
-    )  # new take profit / new stop loss
-
-
-def config_optimization(input_link):
-    _config = {}
-    _best_config = {}
-    _data = []
-
-    f = open("files_for_strategy/absorbation/{}".format(input_link), "r")
-    for line in f:
-        _slovar = {}
-        _strok = line.split(", ")
-        for item in _strok:
-            _slovar[item.split(": ")[0][1:-1]] = (
-                item.split(": ")[1].replace("'", "").replace("\n", "")
-            )
-        _data.append(_slovar)
-    f.close()
-
-    _log, _results_share, _results_money, _locked_money = analisys(_data)
-
-    return _best_config
-
-
-async def get_all_shares():
-    async with AsyncClient(TOKEN) as client:
-        instruments: InstrumentsService = client.instruments
-        shares = []
-        for method in ["shares"]:
-            for item in (await getattr(instruments, method)()).instruments:
-                if item.exchange in ["MOEX", "MOEX_EVENING_WEEKEND"]:
-                    shares.append(
-                        {
-                            "name": item.name,
-                            "ticker": item.ticker,
-                            "class_code": item.class_code,
-                            "figi": item.figi,
-                            "uid": item.uid,
-                            "type": method,
-                            "min_price_increment": float(
-                                quotation_to_decimal(item.min_price_increment)
-                            ),
-                            "scale": 9 - len(str(item.min_price_increment.nano)) + 1,
-                            "lot": item.lot,
-                            "api_trade_available_flag": item.api_trade_available_flag,
-                            "currency": item.currency,
-                            "exchange": item.exchange,
-                            "buy_available_flag": item.buy_available_flag,
-                            "sell_available_flag": item.sell_available_flag,
-                            "short_enabled_flag": item.short_enabled_flag,
-                            "klong": float(quotation_to_decimal(item.klong)),
-                            "kshort": float(quotation_to_decimal(item.kshort)),
-                        }
-                    )
-        return shares
-
-
-async def get_ticker_by_figi(figi: str) -> str:
-    async with AsyncClient(TOKEN) as client:
-        instruments: InstrumentsService = client.instruments
-        for method in ["shares"]:
-            for item in (await getattr(instruments, method)()).instruments:
-                if item.exchange in ["MOEX", "MOEX_EVENING_WEEKEND"]:
-                    if item.figi == figi:
-                        return item.ticker
-
-
-# TOKEN = "t.nb6zNANS5GyESI_e_9ledD8iWDqVpgEK9ewrQu6Orr6F9N-NNdklR5r9VkwFs8RXiPzkXgxeUtcGSf_LxFgXAw" #readonly
-TOKEN = "t.Gb6EBFHfF-eQqwR8LXYn6l7A5AM6aFh1vX9QMOmrZJ2V6OEhZdNZuW4dpThKlEH504oN2Og6HLdMXyltEBK5QQ"  # full access
-working_hours = range(10, 24)
-
-
-def get_whole_volume(trade_dict: dict) -> float:
-    return trade_dict["buy"] + trade_dict["sell"]
-
-
-async def fill_data(shares, client):
-    purchases = []
+async def fill_data(shares: List[Dict], client: AsyncClient) -> List[Dict]:
+    old_purchases = []
     for share in shares:
         data[share["ticker"]] = []
     for share in shares:
@@ -224,11 +114,11 @@ async def fill_data(shares, client):
             - datetime.timedelta(days=6),
             interval=CandleInterval.CANDLE_INTERVAL_DAY,
         ):
-            purchase = analisys(share["ticker"], candle)
-            if purchase is not None:
+            old_purchase = analisys(share["ticker"], candle)
+            if old_purchase is not None:
                 # print(purchase)
-                purchases.append(purchase)
-    return purchases
+                old_purchases.append(old_purchase)
+    return old_purchases
 
 
 async def send_message(tg_bot: TG_Bot, purchase):
@@ -240,12 +130,12 @@ async def send_message(tg_bot: TG_Bot, purchase):
 
 
 async def market_review_andrey(tg_bot: TG_Bot):
-    shares = await get_all_shares()
-    async with AsyncClient(TOKEN) as client:
-        purchases = await fill_data(shares, client)
+    async with AsyncClient(Config.ANDREY_TOKEN) as client:
+        shares = await get_all_shares(client)
+        old_purchases = await fill_data(shares, client)
         # print(len(purchases))
-        for purchase in purchases:
-            await send_message(tg_bot, purchase)
+        for old_purchase in old_purchases:
+            await send_message(tg_bot, old_purchase)
         await asyncio.sleep(30)
         work_hour = datetime.datetime.now().hour
         # work_hour = 1
