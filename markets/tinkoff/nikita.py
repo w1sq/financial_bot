@@ -89,32 +89,30 @@ def bollinger_and_rsi_data(ticker: str, candle_data: HistoricCandle) -> Optional
         }
         _purchase["ticker"] = ticker
         purchases[ticker] = _purchase
+        _purchase["type"] = "ПОКУПКА"
+        return _purchase
     elif purchases[ticker]:
         _purchase = purchases[ticker]
+        float_open = float(quotation_to_decimal(candle_data.open))
         if (
-            float(quotation_to_decimal(candle_data.open))
-            > float(_purchase["price_buy"]) * (100 + StrategyConfig.take_profit) / 100
-            and _purchase["profit"] == "-"
-        ):
+            (
+                float_open
+                > float(_purchase["price_buy"])
+                * (100 + StrategyConfig.take_profit)
+                / 100
+            )
+            or (
+                float_open
+                < float(_purchase["price_buy"]) * (100 - StrategyConfig.stop_los) / 100
+            )
+        ) and _purchase["profit"] == "-":
             _purchase["date_sell"] = candle_data.time
             _purchase["price_sell"] = float(quotation_to_decimal(candle_data.open))
             _purchase["profit"] = (
                 float(quotation_to_decimal(candle_data.open)) - _purchase["price_buy"]
             )
             purchases[ticker] = {}
-            return _purchase
-
-        if (
-            float(quotation_to_decimal(candle_data.open))
-            < float(_purchase["price_buy"]) * (100 - StrategyConfig.stop_los) / 100
-            and _purchase["profit"] == "-"
-        ):
-            _purchase["date_sell"] = candle_data.time
-            _purchase["price_sell"] = float(quotation_to_decimal(candle_data.open))
-            _purchase["profit"] = (
-                float(quotation_to_decimal(candle_data.open)) - _purchase["price_buy"]
-            )
-            purchases[ticker] = {}
+            _purchase["type"] = "ПРОДАЖА"
             return _purchase
     return None
 
@@ -143,8 +141,12 @@ async def fill_data(shares: List[Dict], client: AsyncClient) -> List[Dict]:
 
 
 async def send_message(tg_bot: TG_Bot, trade: Dict):
+    if trade["type"] == "ПРОДАЖА":
+        message_text = f"СТРАТЕГИЯ НИКИТЫ {trade['type']}\n\nПокупка {trade['ticker']} {trade['date_buy']+datetime.timedelta(hours=3):%d-%m-%Y %H:%M} по цене {trade['price_buy']}\n\nПродажа {trade['date_sell']+datetime.timedelta(hours=3):%d-%m-%Y %H:%M} по цене {trade['price_sell']}\n\nПрибыль: {trade['profit']}"
+    else:
+        message_text = f"СТРАТЕГИЯ НИКИТЫ {trade['type']}\n\nПокупка {trade['ticker']} {trade['date_buy']+datetime.timedelta(hours=3):%d-%m-%Y %H:%M} по цене {trade['price_buy']}"
     await tg_bot.send_signal(
-        message=f"СТРАТЕГИЯ НИКИТЫ\n\nПокупка {trade['ticker']} {trade['date_buy']+datetime.timedelta(hours=3):%d-%m-%Y %H:%M} по цене {trade['price_buy']}\n\nПродажа {trade['date_sell']+datetime.timedelta(hours=3):%d-%m-%Y %H:%M} по цене {trade['price_sell']}\n\nПрибыль: {trade['profit']}",
+        message=message_text,
         strategy="nikita",
         volume=0,
     )
