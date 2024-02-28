@@ -3,6 +3,7 @@ from typing import Optional, List, Dict, Tuple
 
 import pandas
 import asyncio
+import tinkoff
 from tinkoff.invest.utils import quotation_to_decimal, now
 from tinkoff.invest import AsyncClient, CandleInterval, HistoricCandle
 
@@ -156,9 +157,10 @@ async def market_review_nikita(tg_bot: TG_Bot):
     async with AsyncClient(Config.NIKITA_TOKEN) as client:
         shares = await get_all_shares(client)
         trades = await fill_data(shares, client)
-        for trade in trades:
-            await send_message(tg_bot, trade)
-        await asyncio.sleep(30)
+        # for trade in trades:
+        #     await send_message(tg_bot, trade)
+        # await asyncio.sleep(30)
+        print("end")
         current_minute = datetime.datetime.now().minute
         while True:
             time_now = datetime.datetime.now()
@@ -168,13 +170,17 @@ async def market_review_nikita(tg_bot: TG_Bot):
             ):
                 candles = []
                 for share in shares:
-                    async for candle in client.get_all_candles(
-                        figi=share["figi"],
-                        from_=now() - datetime.timedelta(minutes=1),
-                        interval=CandleInterval.CANDLE_INTERVAL_1_MIN,
-                    ):
-                        candles.append((share["ticker"], candle))
-                        await asyncio.sleep(0.3)
+                    try:
+                        async for candle in client.get_all_candles(
+                            figi=share["figi"],
+                            from_=now() - datetime.timedelta(minutes=1),
+                            interval=CandleInterval.CANDLE_INTERVAL_1_MIN,
+                        ):
+                            candles.append((share["ticker"], candle))
+                            await asyncio.sleep(0.3)
+                            print(share["ticker"])
+                    except tinkoff.invest.exceptions.AioRequestError:
+                        pass
                 for candle in candles:
                     trade = bollinger_and_rsi_data(candle[0], candle[1])
                     if trade is not None:

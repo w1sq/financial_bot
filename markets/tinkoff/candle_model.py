@@ -51,7 +51,8 @@ def candle_type_analysis(candle: Candle, vol) -> str:
 
     if vol_treshold < vol:
         for candle_function in (
-            cross_5,
+            cross_5_low,
+            cross_5_high,
             hammer_candle_25,
             star_candle_25,
             escimo,
@@ -138,7 +139,7 @@ def hammer_candle_25(
 ) -> str | bool:  # свеча молот - где "тело + верхняя часть" в четверть
     treshold = 0
 
-    if treshold < candle.length and 75 <= candle.low_shadow_perc < 100:
+    if treshold < candle.length and 60 <= candle.low_shadow_perc < 100:
         return candle.color + "_hammer_25"
 
     return False
@@ -149,7 +150,7 @@ def star_candle_25(
 ) -> str | bool:  # свеча звезда - где "тело + нижняя часть" в четверть
     treshold = 0
 
-    if treshold < candle.length and 75 <= candle.high_shadow_perc < 100:
+    if treshold < candle.length and 60 <= candle.high_shadow_perc < 100:
         return candle.color + "_star_25"
 
     return False
@@ -171,8 +172,23 @@ def escimo(
     return False
 
 
-def cross_5(candle: Candle) -> str | bool:  # свеча 'крест' - узкое тело
-    if candle.body_perc <= 5:
+def cross_5_low(
+    candle: Candle,
+) -> (
+    str | bool
+):  # свеча 'крест лоу' - узкое тело, маленькая верхняя тень, большое нисходящее движение
+    if candle.body_perc <= 5 and candle.high_shadow_perc <= 30:
+        return "cross_5"
+
+    return False
+
+
+def cross_5_high(
+    candle: Candle,
+) -> (
+    str | bool
+):  # свеча 'крест' - узкое тело, маленькая большая тень, большое восходящее движение
+    if candle.body_perc <= 5 and candle.low_shadow_perc <= 30:
         return "cross_5"
 
     return False

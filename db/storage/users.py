@@ -30,7 +30,7 @@ class UserStorage:
                 role TEXT,
                 notifications BOOLEAN DEFAULT TRUE,
                 strategies TEXT DEFAULT '123',
-                min_volume INT DEFAULT 0
+                min_volume BIGINT DEFAULT 0
             )
         """
         )

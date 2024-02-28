@@ -27,11 +27,13 @@ async def market_review(tg_bot: TG_Bot):
             time_now = datetime.datetime.now()
             if time_now.hour == time_stamp:
                 if datetime.datetime.today().weekday() == 1:
-                    hours_delta = 72
                     days_delta = 3
-                else:
+                elif 7 > datetime.datetime.today().weekday() > 1:
                     days_delta = 1
-                    hours_delta = 24
+                else:
+                    await asyncio.sleep(60 * 60)
+                    continue
+                hours_delta = 24 * days_delta
                 last_day_data = {}
                 for share in shares:
                     async for candle in client.get_all_candles(
@@ -112,6 +114,8 @@ async def market_review(tg_bot: TG_Bot):
                                 custom_candle, candle.volume
                             )
                             custom_candle.type = candle_type
+                            if share["ticker"] == "PIKK":
+                                print(candle, custom_candle)
                             if candle_type not in [
                                 "trash",
                                 "green_middle",
