@@ -178,7 +178,7 @@ def cross_5_low(
     str | bool
 ):  # свеча 'крест лоу' - узкое тело, маленькая верхняя тень, большое нисходящее движение
     if candle.body_perc <= 5 and candle.high_shadow_perc <= 30:
-        return "cross_5"
+        return "cross_5_low"
 
     return False
 
@@ -189,7 +189,7 @@ def cross_5_high(
     str | bool
 ):  # свеча 'крест' - узкое тело, маленькая большая тень, большое восходящее движение
     if candle.body_perc <= 5 and candle.low_shadow_perc <= 30:
-        return "cross_5"
+        return "cross_5_high"
 
     return False
 
@@ -257,7 +257,10 @@ def pure_candles_list(situations: List[TradeData]):
                 + " "
                 + vol_change_5_day
             )
-        if situation.candle.type == "cross_5":
+        if (
+            situation.candle.type == "cross_5_low"
+            or situation.candle.type == "cross_5_high"
+        ):
             cross_candles.append(
                 situation.date
                 + " "

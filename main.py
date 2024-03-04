@@ -2,6 +2,8 @@
 
 import asyncio
 import aiogram
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
 
 from bot import TG_Bot
 from db import DB
@@ -10,10 +12,10 @@ from config import Config
 
 # from markets.tinkoff.scarping import market_review_scarping
 
-from markets.tinkoff.nikita import market_review_nikita
+from markets.tinkoff.nikita_tv import market_review_nikita
 from markets.tinkoff.andrey_absorbation import market_review_andrey
 from markets.tinkoff.george import market_review_george
-from markets.tinkoff.andrey_candles import market_review
+from markets.tinkoff.andrey_candles import market_review_candles
 
 
 class Launcher:
@@ -23,6 +25,7 @@ class Launcher:
         self.tg_bot: aiogram.Bot = None
         self.user_storage: UserStorage = None
         self.db: DB = None
+        self.strategies_purchases = {"nikita": {}, "george": {}, "andrey": {}}
 
     async def init_db(self):
         """Database startup"""
@@ -49,12 +52,24 @@ class Launcher:
 
     async def tasks_init(self):
         await self.create_bot()
+        scheduler = AsyncIOScheduler()
+        scheduler.add_job(
+            market_review_nikita,
+            "cron",
+            minute="00",
+            args=[self.tg_bot, self.strategies_purchases],
+        )
+        scheduler.add_job(
+            market_review_candles,
+            "cron",
+            hour="1",
+            args=[self.tg_bot],
+        )
+        scheduler.start()
         tasks = [
             # market_review_scarping(self.tg_bot),
-            market_review(self.tg_bot),
-            market_review_nikita(self.tg_bot),
-            market_review_andrey(self.tg_bot),
-            market_review_george(self.tg_bot),
+            # market_review_andrey(self.tg_bot),
+            # market_review_george(self.tg_bot),
             self.main(),
         ]
         await asyncio.gather(*tasks)
@@ -63,4 +78,4 @@ class Launcher:
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     launcher = Launcher()
-    asyncio.run(launcher.tasks_init())
+    loop.run_until_complete(launcher.tasks_init())
