@@ -1,21 +1,34 @@
 """Main script for project startup"""
 
+import json
+from typing import Dict
+
 import asyncio
 import aiogram
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+# from markets.tinkoff.scarping import market_review_scarping
+from markets.tinkoff.nikita_tv import market_review_nikita
+from markets.tinkoff.andrey_absorbation import market_review_andrey
+from markets.tinkoff.george import market_review_george
+from markets.tinkoff.andrey_candles import market_review_candles
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot import TG_Bot
 from db import DB
 from db.storage import UserStorage
 from config import Config
 
-# from markets.tinkoff.scarping import market_review_scarping
 
-from markets.tinkoff.nikita_tv import market_review_nikita
-from markets.tinkoff.andrey_absorbation import market_review_andrey
-from markets.tinkoff.george import market_review_george
-from markets.tinkoff.andrey_candles import market_review_candles
+def serialize_purchases(purchases: Dict[str, Dict]):
+    """Serialize purchases to file"""
+    with open("purchases.json", "w", encoding="utf-8") as file:
+        file.write(json.dumps(purchases))
+
+
+def deserialize_purchases():
+    """Deserialize purchases from file"""
+    with open("purchases.json", "r", encoding="utf-8") as file:
+        return json.loads(file.read())
 
 
 class Launcher:
@@ -25,7 +38,9 @@ class Launcher:
         self.tg_bot: aiogram.Bot = None
         self.user_storage: UserStorage = None
         self.db: DB = None
-        self.strategies_purchases = {"nikita": {}, "george": {}, "andrey": {}}
+        self.strategies_purchases = (
+            deserialize_purchases()
+        )  # { "nikita": { "available": 20000 }, "andrey": {}, "george": {} }
 
     async def init_db(self):
         """Database startup"""
@@ -53,23 +68,29 @@ class Launcher:
     async def tasks_init(self):
         await self.create_bot()
         scheduler = AsyncIOScheduler()
-        scheduler.add_job(
-            market_review_nikita,
-            "cron",
-            minute="00",
-            args=[self.tg_bot, self.strategies_purchases],
-        )
-        scheduler.add_job(
-            market_review_candles,
-            "cron",
-            hour="1",
-            args=[self.tg_bot],
-        )
-        scheduler.start()
+        # scheduler.add_job(
+        #     market_review_nikita,
+        #     "cron",
+        #     second="00",
+        #     args=[self.tg_bot, self.strategies_purchases],
+        # )
+        # scheduler.add_job(
+        #     market_review_candles,
+        #     "cron",
+        #     hour="1",
+        #     args=[self.tg_bot],
+        # )
+        # scheduler.add_job(
+        #     serialize_purchases,
+        #     "cron",
+        #     second="30",
+        #     args=[self.strategies_purchases],
+        # )
+        # scheduler.start()
         tasks = [
             # market_review_scarping(self.tg_bot),
             # market_review_andrey(self.tg_bot),
-            # market_review_george(self.tg_bot),
+            market_review_george(self.tg_bot),
             self.main(),
         ]
         await asyncio.gather(*tasks)

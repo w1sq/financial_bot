@@ -1,5 +1,5 @@
 aiogram==2.25
 asyncpg
-aioschedule
 tinkoff-investments
 pandas
+apscheduler

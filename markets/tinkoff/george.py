@@ -8,7 +8,7 @@ from tinkoff.invest import AsyncClient, CandleInterval, HistoricCandle
 
 from bot import TG_Bot
 from config import Config
-from markets.tinkoff.utils import get_all_shares
+from markets.tinkoff.utils import get_futures
 
 strategy_configs = {
     "BR": {
@@ -579,10 +579,13 @@ async def send_message(tg_bot: TG_Bot, purchase):
 
 async def market_review_george(tg_bot: TG_Bot):
     async with AsyncClient(Config.GEORGE_TOKEN) as client:
-        shares = await get_all_shares(client, strategy_configs.keys())
-        local_purchases = await fill_data(shares, client)
-        for purchase in local_purchases:
-            await send_message(tg_bot, purchase)
+        with open("test.json", "w", encoding="utf-8") as file:
+            file.write(str(await get_futures(client)))
+        # futures = await get_futures(client)
+        # print(futures)
+        # local_purchases = await fill_data(shares, client)
+        # for purchase in local_purchases:
+        #     await send_message(tg_bot, purchase)
         # await asyncio.sleep(30)
         # work_hour = 1
         # while True:

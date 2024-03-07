@@ -7,7 +7,7 @@ from tinkoff.invest import AsyncClient, CandleInterval, HistoricCandle
 
 from bot import TG_Bot
 from config import Config
-from markets.tinkoff.utils import get_all_shares
+from markets.tinkoff.utils import get_shares
 
 
 # declaration of utility containers
@@ -131,7 +131,7 @@ async def send_message(tg_bot: TG_Bot, purchase):
 
 async def market_review_andrey(tg_bot: TG_Bot):
     async with AsyncClient(Config.ANDREY_TOKEN) as client:
-        shares = await get_all_shares(client)
+        shares = await get_shares(client)
         old_purchases = await fill_data(shares, client)
         # print(len(purchases))
         for old_purchase in old_purchases:

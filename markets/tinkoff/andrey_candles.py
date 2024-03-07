@@ -11,7 +11,7 @@ from tinkoff.invest import (
 from bot import TG_Bot
 from markets.tinkoff.candle_model import Candle, candle_type_analysis
 from config import Config
-from markets.tinkoff.utils import get_all_shares
+from markets.tinkoff.utils import get_shares
 
 
 def get_whole_volume(trade_dict: dict) -> float:
@@ -21,7 +21,7 @@ def get_whole_volume(trade_dict: dict) -> float:
 async def market_review_candles(tg_bot: TG_Bot):
     async with AsyncClient(Config.ANDREY_TOKEN) as client:
         time_now = datetime.datetime.now()
-        shares = await get_all_shares(client)
+        shares = await get_shares(client)
         if time_now.weekday() == 1:
             days_delta = 3
         elif 7 > time_now.weekday() > 1:

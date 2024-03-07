@@ -9,7 +9,7 @@ from tinkoff.invest import AsyncClient, CandleInterval, HistoricCandle
 
 from bot import TG_Bot
 from config import Config
-from markets.tinkoff.utils import get_all_shares
+from markets.tinkoff.utils import get_shares
 
 
 class StrategyConfig:
@@ -155,7 +155,7 @@ async def send_message(tg_bot: TG_Bot, trade: Dict):
 
 async def market_review_nikita(tg_bot: TG_Bot):
     async with AsyncClient(Config.NIKITA_TOKEN) as client:
-        shares = await get_all_shares(client)
+        shares = await get_shares(client)
         trades = await fill_data(shares, client)
         # for trade in trades:
         #     await send_message(tg_bot, trade)
