@@ -7,7 +7,11 @@ import asyncio
 import aiogram
 
 # from markets.tinkoff.scarping import market_review_scarping
-from markets.tinkoff.nikita_tv import market_review_nikita
+from markets.tinkoff.nikita_tv import (
+    market_review_nikita,
+    orders_check_nikita,
+    stop_orders_check_nikita,
+)
 from markets.tinkoff.andrey_absorbation import market_review_andrey
 from markets.tinkoff.george import market_review_george
 from markets.tinkoff.andrey_candles import market_review_candles
@@ -38,9 +42,9 @@ class Launcher:
         self.tg_bot: aiogram.Bot = None
         self.user_storage: UserStorage = None
         self.db: DB = None
-        self.strategies_purchases = (
+        self.strategies_data = (
             deserialize_purchases()
-        )  # { "nikita": { "available": 20000 }, "andrey": {}, "george": {} }
+        )  # {"nikita": { "available": 20000, "limit_orders": {}, "stop_orders": {} },"andrey": { "market_data": {}, "purchases": {} },"george": {}}
 
     async def init_db(self):
         """Database startup"""
@@ -68,29 +72,48 @@ class Launcher:
     async def tasks_init(self):
         await self.create_bot()
         scheduler = AsyncIOScheduler()
+        scheduler.add_job(
+            market_review_nikita,
+            "cron",
+            second="00",
+            args=[self.tg_bot, self.strategies_data["nikita"]],
+        )
+        scheduler.add_job(
+            orders_check_nikita,
+            "cron",
+            second="00",
+            args=[self.tg_bot, self.strategies_data["nikita"]],
+        )
+        scheduler.add_job(
+            stop_orders_check_nikita,
+            "cron",
+            second="00",
+            args=[self.tg_bot, self.strategies_data["nikita"]],
+        )
         # scheduler.add_job(
-        #     market_review_nikita,
-        #     "cron",
-        #     second="00",
-        #     args=[self.tg_bot, self.strategies_purchases],
-        # )
-        # scheduler.add_job(
-        #     market_review_candles,
+        #     market_review_andrey,
         #     "cron",
         #     hour="1",
-        #     args=[self.tg_bot],
+        #     args=[self.tg_bot, self.strategies_data["andrey"]],
         # )
-        # scheduler.add_job(
-        #     serialize_purchases,
-        #     "cron",
-        #     second="30",
-        #     args=[self.strategies_purchases],
-        # )
-        # scheduler.start()
+        scheduler.add_job(
+            market_review_candles,
+            "cron",
+            hour="1",
+            args=[self.tg_bot],
+        )
+        scheduler.add_job(
+            serialize_purchases,
+            "cron",
+            second="30",
+            args=[self.strategies_data],
+        )
+        scheduler.start()
         tasks = [
+            market_review_candles(self.tg_bot),
             # market_review_scarping(self.tg_bot),
-            # market_review_andrey(self.tg_bot),
-            market_review_george(self.tg_bot),
+            # market_review_andrey(self.tg_bot, self.strategies_data["andrey"]),
+            # market_review_george(self.tg_bot),
             self.main(),
         ]
         await asyncio.gather(*tasks)

@@ -1,1 +1,5 @@
-{"nikita": {"available": 20000}, "andrey": {}, "george": {}}
+{
+    "nikita": { "available": 20000, "limit_orders": {}, "stop_orders": {} },
+    "andrey": { "market_data": {}, "purchases": {} },
+    "george": {}
+}
