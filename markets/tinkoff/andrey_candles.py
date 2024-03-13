@@ -34,7 +34,7 @@ async def market_review_candles(tg_bot: TG_Bot):
             async for candle in client.get_all_candles(
                 figi=share["figi"],
                 from_=tinkoff.invest.utils.now()
-                - datetime.timedelta(hours=hours_delta + 1),
+                - datetime.timedelta(hours=hours_delta + time_now.hour),
                 to=tinkoff.invest.utils.now(),
                 interval=CandleInterval.CANDLE_INTERVAL_DAY,
             ):

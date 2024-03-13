@@ -12,7 +12,12 @@ from markets.tinkoff.nikita_tv import (
     orders_check_nikita,
     stop_orders_check_nikita,
 )
-from markets.tinkoff.andrey_absorbation import market_review_andrey
+from markets.tinkoff.andrey_absorbation import (
+    market_review_andrey,
+    fill_market_data_andrey,
+    orders_check_andrey,
+    stop_orders_check_andrey,
+)
 from markets.tinkoff.george import market_review_george
 from markets.tinkoff.andrey_candles import market_review_candles
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -90,12 +95,24 @@ class Launcher:
             second="00",
             args=[self.tg_bot, self.strategies_data["nikita"]],
         )
-        # scheduler.add_job(
-        #     market_review_andrey,
-        #     "cron",
-        #     hour="1",
-        #     args=[self.tg_bot, self.strategies_data["andrey"]],
-        # )
+        scheduler.add_job(
+            market_review_andrey,
+            "cron",
+            hour="1",
+            args=[self.tg_bot, self.strategies_data["andrey"]],
+        )
+        scheduler.add_job(
+            orders_check_andrey,
+            "cron",
+            second="00",
+            args=[self.tg_bot, self.strategies_data["andrey"]],
+        )
+        scheduler.add_job(
+            stop_orders_check_andrey,
+            "cron",
+            second="00",
+            args=[self.tg_bot, self.strategies_data["andrey"]],
+        )
         scheduler.add_job(
             market_review_candles,
             "cron",
@@ -109,10 +126,11 @@ class Launcher:
             args=[self.strategies_data],
         )
         scheduler.start()
+        await fill_market_data_andrey(self.strategies_data["andrey"])
         tasks = [
-            market_review_candles(self.tg_bot),
+            # market_review_candles(self.tg_bot),
             # market_review_scarping(self.tg_bot),
-            # market_review_andrey(self.tg_bot, self.strategies_data["andrey"]),
+            market_review_andrey(self.tg_bot, self.strategies_data["andrey"]),
             # market_review_george(self.tg_bot),
             self.main(),
         ]

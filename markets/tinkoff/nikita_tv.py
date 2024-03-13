@@ -8,11 +8,8 @@ from tradingview_ta import TA_Handler, Interval
 # import tinkoff
 # from tinkoff.invest.utils import quotation_to_decimal, now
 from tinkoff.invest import (
-    CandleInterval,
-    HistoricCandle,
     OrderState,
     OrderExecutionReportStatus,
-    StopOrder,
 )
 
 
@@ -72,7 +69,7 @@ async def bollinger_and_rsi_data(share: dict, purchases: dict):
         and not purchases.get(share["ticker"], None)
     ):
         quantity_lot = int(
-            min(3000, purchases["available"]) // (candle_close * share["lot"])
+            min(10000, purchases["available"]) // (candle_close * share["lot"])
         )
         if quantity_lot > 0:
             # purchase = {
@@ -84,9 +81,10 @@ async def bollinger_and_rsi_data(share: dict, purchases: dict):
             # purchase["ticker"] = share["ticker"]
             # purchases[share["ticker"]] = purchase
             # purchase["type"] = 1
-            buy_trade = await buy_limit_order(
-                share["figi"], candle_close, quantity_lot, Config.NIKITA_TOKEN
-            )
+            async with AsyncClient(Config.NIKITA_TOKEN) as client:
+                buy_trade = await buy_limit_order(
+                    share["figi"], candle_close, quantity_lot, client
+                )
             # purchase["quantity"] = buy_trade.lots_executed * share["lot"]
             # purchase["price_buy"] = moneyvalue_to_float(buy_trade.executed_order_price)
             # purchase["buy_commission"] = moneyvalue_to_float(
@@ -156,14 +154,14 @@ async def send_message(tg_bot: TG_Bot, trade: Dict):
 async def orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
     messages_to_send = []
     async with AsyncClient(Config.NIKITA_TOKEN) as client:
-        active_orders: List[OrderState] = await client.orders.get_orders(
-            await get_account_id(client)
+        active_orders = await client.orders.get_orders(
+            account_id=await get_account_id(client)
         )
         local_orders_id = purchases["limit_orders"].keys()
         max_timestamp = datetime.datetime.now(
             datetime.timezone.utc
         ) + datetime.timedelta(seconds=59)
-        for order in active_orders:
+        for order in active_orders.orders:
             ticker = purchases["limit_orders"][order.order_id]
             if order.order_id in local_orders_id and order.order_date > max_timestamp:
                 if order.lots_executed > 0:
@@ -181,6 +179,8 @@ async def orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
                         * (100 - StrategyConfig.stop_los)
                         / 100
                     )
+                    take_profit_price -= take_profit_price % 0.02
+                    stop_loss_price -= stop_loss_price % 0.02
                     take_profit_response, stop_loss_response = await place_stop_orders(
                         order.figi,
                         take_profit_price,
@@ -188,17 +188,20 @@ async def orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
                         order.lots_executed,
                         client,
                     )
-                    stop_orders_id_tuple = (
-                        take_profit_response.stop_order_id,
-                        stop_loss_response.stop_order_id,
+                    stop_orders_id_string = (
+                        take_profit_response.stop_order_id
+                        + "|"
+                        + stop_loss_response.stop_order_id,
                     )
-                    purchases["stop_orders"][stop_orders_id_tuple] = (
+                    purchases["stop_orders"][stop_orders_id_string] = (
                         purchase_text,
                         take_profit_price,
                         stop_loss_price,
                         order.lots_executed,
                     )
-                    purchases["available"] -= order.executed_order_price
+                    purchases["available"] -= moneyvalue_to_float(
+                        order.executed_order_price
+                    )
                 else:
                     messages_to_send.append(
                         f"СТРАТЕГИЯ НИКИТЫ ОТМЕНА\n\nОтмена {ticker} {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')}"
@@ -208,7 +211,7 @@ async def orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
         local_orders_id = purchases["limit_orders"].keys()
         for local_order_id in local_orders_id:
             order: OrderState = await client.orders.get_order_state(
-                await get_account_id(client), local_order_id
+                account_id=await get_account_id(client), order_id=local_order_id
             )
             if (
                 order.execution_report_status
@@ -227,6 +230,8 @@ async def orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
                     * (100 - StrategyConfig.stop_los)
                     / 100
                 )
+                take_profit_price -= take_profit_price % 0.02
+                stop_loss_price -= stop_loss_price % 0.02
                 take_profit_response, stop_loss_response = await place_stop_orders(
                     order.figi,
                     take_profit_price,
@@ -234,18 +239,22 @@ async def orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
                     order.lots_executed,
                     client,
                 )
-                stop_orders_id_tuple = (
-                    take_profit_response.stop_order_id,
-                    stop_loss_response.stop_order_id,
+                stop_orders_id_string = str(
+                    take_profit_response.stop_order_id
+                    + "|"
+                    + stop_loss_response.stop_order_id,
                 )
-                purchases["stop_orders"][stop_orders_id_tuple] = (
+                purchases["stop_orders"][stop_orders_id_string] = (
                     purchase_text,
+                stop_loss_price -= stop_loss_price % 0.02
                     take_profit_price,
                     stop_loss_price,
                     order.lots_executed,
                 )
                 purchases["limit_orders"].pop(order.order_id)
-                purchases["available"] -= order.executed_order_price
+                purchases["available"] -= moneyvalue_to_float(
+                    order.executed_order_price
+                )
     for message in messages_to_send:
         await tg_bot.send_signal(
             message=message,
@@ -257,16 +266,17 @@ async def orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
 async def stop_orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
     messages_to_send = []
     async with AsyncClient(Config.NIKITA_TOKEN) as client:
-        active_stop_orders: List[StopOrder] = await client.stop_orders.get_stop_orders(
-            await get_account_id(client)
+        active_stop_orders = await client.stop_orders.get_stop_orders(
+            account_id=await get_account_id(client)
         )
         active_stop_orders_ids = [
-            stop_order.stop_order_id for stop_order in active_stop_orders
+            stop_order.stop_order_id for stop_order in active_stop_orders.stop_orders
         ]
         local_stop_orders_id = purchases["stop_orders"].keys()
-        for take_profit_order_id, stop_loss_order_id in local_stop_orders_id:
+        for stop_orders_id_string in local_stop_orders_id:
+            take_profit_order_id, stop_loss_order_id = stop_orders_id_string.split("|")
             (purchase_text, take_profit_price, stop_loss_price, lots_traded) = (
-                purchases["stop_order"][(take_profit_order_id, stop_loss_order_id)]
+                purchases["stop_orders"][stop_orders_id_string]
             )
             if (
                 take_profit_order_id not in active_stop_orders_ids
@@ -293,7 +303,7 @@ async def stop_orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
                 messages_to_send.append(
                     f"СТРАТЕГИЯ НИКИТЫ ПРОДАЖА\n\n{purchase_text}\n\nПродажа {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} по цене {price_sell}\n\nПрибыль: {profit}"
                 )
-                purchases["stop_orders"].pop((take_profit_order_id, stop_loss_order_id))
+                purchases["stop_orders"].pop(stop_orders_id_string)
     for message in messages_to_send:
         await tg_bot.send_signal(
             message=message,

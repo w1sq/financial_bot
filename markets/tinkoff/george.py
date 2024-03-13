@@ -579,29 +579,27 @@ async def send_message(tg_bot: TG_Bot, purchase):
 
 async def market_review_george(tg_bot: TG_Bot):
     async with AsyncClient(Config.GEORGE_TOKEN) as client:
-        with open("test.json", "w", encoding="utf-8") as file:
-            file.write(str(await get_futures(client)))
-        # futures = await get_futures(client)
-        # print(futures)
-        # local_purchases = await fill_data(shares, client)
-        # for purchase in local_purchases:
-        #     await send_message(tg_bot, purchase)
-        # await asyncio.sleep(30)
-        # work_hour = 1
-        # while True:
-        #     if datetime.datetime.now().hour == work_hour:
-        #         candles = []
-        #         for share in shares:
-        #             async for candle in client.get_all_candles(
-        #                 figi=share["figi"],
-        #                 from_=now() - datetime.timedelta(days=1),
-        #                 interval=CandleInterval.CANDLE_INTERVAL_1_MIN,
-        #             ):
-        #                 candles.append((share["ticker"], candle))
-        #         for candle in candles:
-        #             purchase = strategy(candle[0], candle[1])
-        #             if purchase is not None:
-        #                 await send_message(tg_bot, purchase)
-        #         await asyncio.sleep(60 * 60 * 23)
-        #     else:
-        #         await asyncio.sleep(60)
+        futures = await get_futures(client)
+        print(futures)
+        local_purchases = await fill_data(shares, client)
+        for purchase in local_purchases:
+            await send_message(tg_bot, purchase)
+        await asyncio.sleep(30)
+        work_hour = 1
+        while True:
+            if datetime.datetime.now().hour == work_hour:
+                candles = []
+                for share in shares:
+                    async for candle in client.get_all_candles(
+                        figi=share["figi"],
+                        from_=now() - datetime.timedelta(days=1),
+                        interval=CandleInterval.CANDLE_INTERVAL_1_MIN,
+                    ):
+                        candles.append((share["ticker"], candle))
+                for candle in candles:
+                    purchase = strategy(candle[0], candle[1])
+                    if purchase is not None:
+                        await send_message(tg_bot, purchase)
+                await asyncio.sleep(60 * 60 * 23)
+            else:
+                await asyncio.sleep(60)
