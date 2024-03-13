@@ -49,7 +49,7 @@ class Launcher:
         self.db: DB = None
         self.strategies_data = (
             deserialize_purchases()
-        )  # {"nikita": { "available": 20000, "limit_orders": {}, "stop_orders": {} },"andrey": { "market_data": {}, "purchases": {} },"george": {}}
+        )  # {"nikita": { "available": 20000 },"andrey": { "market_data": {}, "purchases": {} },"george": {}}
 
     async def init_db(self):
         """Database startup"""
@@ -95,24 +95,24 @@ class Launcher:
             second="00",
             args=[self.tg_bot, self.strategies_data["nikita"]],
         )
-        scheduler.add_job(
-            market_review_andrey,
-            "cron",
-            hour="1",
-            args=[self.tg_bot, self.strategies_data["andrey"]],
-        )
-        scheduler.add_job(
-            orders_check_andrey,
-            "cron",
-            second="00",
-            args=[self.tg_bot, self.strategies_data["andrey"]],
-        )
-        scheduler.add_job(
-            stop_orders_check_andrey,
-            "cron",
-            second="00",
-            args=[self.tg_bot, self.strategies_data["andrey"]],
-        )
+        # scheduler.add_job(
+        #     market_review_andrey,
+        #     "cron",
+        #     hour="1",
+        #     args=[self.tg_bot, self.strategies_data["andrey"]],
+        # )
+        # scheduler.add_job(
+        #     orders_check_andrey,
+        #     "cron",
+        #     second="00",
+        #     args=[self.tg_bot, self.strategies_data["andrey"]],
+        # )
+        # scheduler.add_job(
+        #     stop_orders_check_andrey,
+        #     "cron",
+        #     second="00",
+        #     args=[self.tg_bot, self.strategies_data["andrey"]],
+        # )
         scheduler.add_job(
             market_review_candles,
             "cron",
@@ -126,11 +126,11 @@ class Launcher:
             args=[self.strategies_data],
         )
         scheduler.start()
-        await fill_market_data_andrey(self.strategies_data["andrey"])
+        # await fill_market_data_andrey(self.strategies_data["andrey"])
         tasks = [
             # market_review_candles(self.tg_bot),
             # market_review_scarping(self.tg_bot),
-            market_review_andrey(self.tg_bot, self.strategies_data["andrey"]),
+            # market_review_andrey(self.tg_bot, self.strategies_data["andrey"]),
             # market_review_george(self.tg_bot),
             self.main(),
         ]
