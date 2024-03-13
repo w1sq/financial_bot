@@ -7,7 +7,7 @@ import asyncio
 import aiogram
 
 # from markets.tinkoff.scarping import market_review_scarping
-from markets.tinkoff.nikita_tv import (
+from markets.tinkoff.nikita import (
     market_review_nikita,
     orders_check_nikita,
     stop_orders_check_nikita,

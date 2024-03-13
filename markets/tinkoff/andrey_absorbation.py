@@ -20,10 +20,6 @@ from markets.tinkoff.utils import (
     get_account_id,
 )
 
-# declaration of utility containers
-
-# data: Dict[str, List[Tuple[HistoricCandle, float]]] = {}
-
 
 class StrategyConfig:
     take_profit = 1

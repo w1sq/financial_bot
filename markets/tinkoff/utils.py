@@ -143,10 +143,6 @@ async def place_stop_orders(
             expiration_type=StopOrderExpirationType.STOP_ORDER_EXPIRATION_TYPE_GOOD_TILL_CANCEL,
         )
     )
-    # if take_profit_response.execution_report_status != 1:
-    #     print(figi, take_profit_response)
-    # if stop_loss_response.execution_report_status != 1:
-    #     print(figi, take_profit_response)
     return (take_profit_response, stop_loss_response)
 
 
