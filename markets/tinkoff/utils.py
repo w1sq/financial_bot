@@ -57,9 +57,7 @@ async def get_futures(client: AsyncClient, tickers: List[str] = None) -> List[Di
     shares = []
     for method in ["futures"]:
         for item in (await getattr(instruments, method)()).instruments:
-            # if item.exchange in ["MOEX", "MOEX_EVENING_WEEKEND"] and (
-            #     tickers is None or item.ticker in tickers
-            # ):
+            if item.
             shares.append(
                 {
                     "name": item.name,

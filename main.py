@@ -11,7 +11,6 @@ from markets.tinkoff.nikita import (
     market_review_nikita,
     orders_check_nikita,
     stop_orders_check_nikita,
-    test,
 )
 from markets.tinkoff.andrey_absorbation import (
     market_review_andrey,
@@ -19,7 +18,7 @@ from markets.tinkoff.andrey_absorbation import (
     orders_check_andrey,
     stop_orders_check_andrey,
 )
-from markets.tinkoff.george import market_review_george
+from markets.tinkoff.george import market_review_george, fill_data
 from markets.tinkoff.andrey_candles import market_review_candles
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -128,12 +127,12 @@ class Launcher:
         )
         # scheduler.start()
         # await fill_market_data_andrey(self.strategies_data["andrey"])
+        print(await fill_data())
         tasks = [
             # market_review_candles(self.tg_bot),
             # market_review_scarping(self.tg_bot),
             # market_review_andrey(self.tg_bot, self.strategies_data["andrey"]),
-            # market_review_george(self.tg_bot),
-            test(self.strategies_data["nikita"]),
+            market_review_george(self.tg_bot),
             self.main(),
         ]
         await asyncio.gather(*tasks)

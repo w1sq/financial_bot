@@ -29,7 +29,7 @@ class StrategyConfig:
     bolinger_mult = 2
     bollinger_frame_count = 20
     rsi_count_frame = 14
-    strategy_bollinger_range = 1.25
+    strategy_bollinger_range = 1.5
     rsi_treshold = 30
     take_profit = 0.4
     stop_loss = 1
@@ -110,7 +110,6 @@ async def orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
             order_id = purchases["orders"][ticker].get("order_id", None)
             if not order_id or "|" in order_id:
                 continue
-            print(order_id)
             analysis = get_analysis(ticker)
             if analysis is None:
                 continue
@@ -277,18 +276,3 @@ async def market_review_nikita(tg_bot: TG_Bot, purchases: Dict[str, Dict]):
             strategy="nikita",
             volume=0,
         )
-
-
-async def test(purchases: Dict[str, Dict]):
-    async with AsyncClient(Config.NIKITA_TOKEN) as client:
-        shares = await get_shares(client)
-    time_now = datetime.datetime.now()
-    if time_now.hour in Config.MOEX_WORKING_HOURS:
-        for share in shares:
-            if share["ticker"] not in purchases["orders"].keys():
-                if share["min_price_increment"] < 0.002:
-                    print(
-                        share["ticker"],
-                        share["min_price_increment"],
-                        type(share["min_price_increment"]),
-                    )

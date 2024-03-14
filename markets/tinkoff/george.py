@@ -540,29 +540,36 @@ def short_output(
     return _cur_purchase, _capital, _capital_max
 
 
-async def fill_data(shares: List[Dict], client: AsyncClient) -> List[Dict]:
-    local_purchases = []
-    for share in shares:
-        strategy_data[share["ticker"]] = []
-        in_order_long[share["ticker"]] = False
-        in_order_short[share["ticker"]] = False
-        ema[share["ticker"]] = 0
-        sma_sum[share["ticker"]] = 0
-        purchases[share["ticker"]] = {}
-    for share in shares:
-        async for candle in client.get_all_candles(
-            figi=share["figi"],
-            from_=datetime.datetime.combine(
-                datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc),
-                datetime.time(6, 0),
-            ).replace(tzinfo=datetime.timezone.utc)
-            - datetime.timedelta(days=20),
-            interval=CandleInterval.CANDLE_INTERVAL_1_MIN,
-        ):
-            purchase_list = strategy(share["ticker"], candle)
-            if purchase_list is not None:
-                local_purchases.extend(purchase_list)
-    return local_purchases
+async def fill_data() -> List[Dict]:
+    """Function to fill in historical data for strategy testing"""
+    async with AsyncClient(Config.GEORGE_TOKEN) as client:
+        futures = await get_futures(
+            client
+        )  # TODO сделать поиск правильных(активных) и нужных фьючерсов
+        local_purchases = (
+            []
+        )  # закупки в прошлом, можно проверить работоспособность стратегии
+        for future in futures:  # пробегаемся и подгатавливаем контейнеры для стратегии
+            strategy_data[future["ticker"]] = []
+            in_order_long[future["ticker"]] = False
+            in_order_short[future["ticker"]] = False
+            ema[future["ticker"]] = 0
+            sma_sum[future["ticker"]] = 0
+            purchases[future["ticker"]] = {}
+        for future in futures:
+            async for candle in client.get_all_candles(
+                figi=future["figi"],
+                from_=datetime.datetime.combine(
+                    datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc),
+                    datetime.time(6, 0),  # 6 утра по Лондону - час открытия биржи
+                ).replace(tzinfo=datetime.timezone.utc)
+                - datetime.timedelta(days=20),
+                interval=CandleInterval.CANDLE_INTERVAL_1_MIN,
+            ):
+                purchase_list = strategy(future["ticker"], candle)
+                if purchase_list is not None:
+                    local_purchases.extend(purchase_list)
+        return local_purchases
 
 
 async def send_message(tg_bot: TG_Bot, purchase):
@@ -580,26 +587,15 @@ async def send_message(tg_bot: TG_Bot, purchase):
 async def market_review_george(tg_bot: TG_Bot):
     async with AsyncClient(Config.GEORGE_TOKEN) as client:
         futures = await get_futures(client)
-        print(futures)
-        local_purchases = await fill_data(shares, client)
-        for purchase in local_purchases:
-            await send_message(tg_bot, purchase)
-      lots_traded  await asyncio.sleep(30)
-        work_hour = 1
-        while True:
-            if datetime.datetime.now().hour == work_hour:
-                candles = []
-                for share in shares:
-                    async for candle in client.get_all_candles(
-                        figi=share["figi"],
-                        from_=now() - datetime.timedelta(days=1),
-                        interval=CandleInterval.CANDLE_INTERVAL_1_MIN,
-                    ):
-                        candles.append((share["ticker"], candle))
-                for candle in candles:
-                    purchase = strategy(candle[0], candle[1])
-                    if purchase is not None:
-                        await send_message(tg_bot, purchase)
-                await asyncio.sleep(60 * 60 * 23)
-            else:
-                await asyncio.sleep(60)
+        candles = []
+        for future in futures:
+            async for candle in client.get_all_candles(
+                figi=future["figi"],
+                from_=now() - datetime.timedelta(days=1),
+                interval=CandleInterval.CANDLE_INTERVAL_1_MIN,
+            ):
+                candles.append((future["ticker"], candle))
+        for candle in candles:
+            purchase = strategy(candle[0], candle[1])
+            if purchase is not None:
+                await send_message(tg_bot, purchase)
