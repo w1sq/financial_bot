@@ -584,7 +584,7 @@ async def market_review_george(tg_bot: TG_Bot):
         local_purchases = await fill_data(shares, client)
         for purchase in local_purchases:
             await send_message(tg_bot, purchase)
-        await asyncio.sleep(30)
+      lots_traded  await asyncio.sleep(30)
         work_hour = 1
         while True:
             if datetime.datetime.now().hour == work_hour:

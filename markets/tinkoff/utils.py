@@ -107,7 +107,7 @@ async def buy_limit_order(
         order_type=OrderType.ORDER_TYPE_LIMIT,
         order_id=str(datetime.datetime.utcnow().timestamp()),
     )
-    if order.execution_report_status != 1:
+    if order.execution_report_status not in (1, 4):
         print(figi, order)
     return order
 
@@ -148,7 +148,7 @@ async def place_stop_orders(
 
 def float_to_quotation(value):
     units = int(value)
-    nano = int((value - units) * 1_000_000_000)
+    nano = int((value - units + 1e-10) * 1_000_000_000)
     return Quotation(units=units, nano=nano)
 
 
