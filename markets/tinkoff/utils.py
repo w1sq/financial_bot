@@ -88,6 +88,25 @@ async def get_account_id(client: AsyncClient):
     return accounts.accounts[0].id
 
 
+async def buy_market_order(
+    figi: str,
+    quantity: int,
+    client: AsyncClient,
+) -> PostOrderResponse:
+    account_id = await get_account_id(client)
+    order: PostOrderResponse = await client.orders.post_order(
+        instrument_id=figi,
+        account_id=account_id,
+        quantity=quantity,
+        direction=OrderDirection.ORDER_DIRECTION_BUY,
+        order_type=OrderType.ORDER_TYPE_MARKET,
+        order_id=str(datetime.datetime.utcnow().timestamp()),
+    )
+    if order.execution_report_status not in (1, 4):
+        print(figi, order)
+    return order
+
+
 async def buy_limit_order(
     figi: str,
     price: float,
@@ -102,7 +121,7 @@ async def buy_limit_order(
         quantity=quantity,
         direction=OrderDirection.ORDER_DIRECTION_BUY,
         order_type=OrderType.ORDER_TYPE_LIMIT,
-        order_id=str(datetime.datetime.now(datetime.UTC).timestamp()),
+        order_id=str(datetime.datetime.utcnow().timestamp()),
     )
     if order.execution_report_status not in (1, 4):
         print(figi, order)

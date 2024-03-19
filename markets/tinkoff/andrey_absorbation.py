@@ -15,7 +15,7 @@ from bot import TG_Bot
 from config import Config
 from markets.tinkoff.utils import (
     get_shares,
-    buy_limit_order,
+    buy_market_order,
     place_stop_orders,
     moneyvalue_to_float,
     get_account_id,
@@ -47,7 +47,7 @@ def get_candle_body_perc(candle: HistoricCandle) -> float:
 async def analisys(
     share: dict, current_candle: HistoricCandle, purchases: dict, buy: bool = True
 ):
-    if not purchases[share["ticker"]]:
+    if not purchases.get(share["ticker"]):
         purchases[share["ticker"]] = (
             float(quotation_to_decimal(current_candle.open)),
             float(quotation_to_decimal(current_candle.close)),
@@ -78,24 +78,27 @@ async def analisys(
 
     if (
         (
-            (prev_candle_open <= prev_candle_close)
-            & (current_candle.open > current_candle.close)
+            (
+                (prev_candle_open <= prev_candle_close)
+                & (current_candle.open > current_candle.close)
+            )
+            & (prev_candle_body_perc > 20)
+            & (current_candle_body_perc > 20)
         )
-        & (prev_candle_body_perc > 20)
-        & (current_candle_body_perc > 20)
-    ) & (
-        prev_candle_open <= float(quotation_to_decimal(current_candle.open))
-    ) & falling_market_indicator and buy and not purchases["orders"][share["ticker"]].get("order_id", None):
+        & (prev_candle_open <= float(quotation_to_decimal(current_candle.open)))
+        & falling_market_indicator
+        and buy
+        and not purchases["orders"][share["ticker"]].get("order_id", None)
+    ):
         candle_close = float(quotation_to_decimal(current_candle.close))
         quantity_lot = int(
             min(StrategyConfig.money_in_order, purchases["available"])
             // (candle_close * share["lot"])
         )
         if quantity_lot > 0:
+            candle_close -= candle_close % share["min_price_increment"]
             async with AsyncClient(Config.ANDREY_TOKEN) as client:
-                buy_trade = await buy_limit_order(
-                    share["figi"], candle_close, quantity_lot, client
-                )
+                buy_trade = await buy_market_order(share["figi"], quantity_lot, client)
             purchases["orders"][share["ticker"]]["order_id"] = buy_trade.order_id
             purchases["available"] -= candle_close * quantity_lot * share["lot"]
             return f"СТРАТЕГИЯ АНДРЕЯ ЗАЯВКА\n\nЗаявка на {share['ticker']} {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} по цене {candle_close}\nКол-во: {quantity_lot * share['lot']}"
@@ -113,7 +116,7 @@ async def fill_market_data_andrey(purchases: dict):
     async with AsyncClient(Config.ANDREY_TOKEN) as client:
         shares = await get_shares(client)
         now_time = datetime.datetime.combine(
-            datetime.datetime.now(datetime.UTC).replace(tzinfo=datetime.timezone.utc),
+            datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc),
             datetime.time(6, 0),
         ).replace(tzinfo=datetime.timezone.utc)
         for share in shares:

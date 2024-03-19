@@ -98,7 +98,7 @@ class Launcher:
         scheduler.add_job(
             market_review_andrey,
             "cron",
-            hour="10",
+            hour="11",
             args=[self.tg_bot, self.strategies_data["andrey"]],
         )
         scheduler.add_job(

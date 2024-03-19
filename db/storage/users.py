@@ -92,12 +92,17 @@ class UserStorage:
 
     async def get_all_recipients(self, strategy: str, volume: int) -> List[User]:
         strategies = {"nikita": 1, "andrey": 2, "george": 3}
-        data = await self._db.fetch(
-            f"""
-            SELECT * FROM {self.__table} WHERE strategies LIKE '%{strategies[strategy]}%' AND notifications = TRUE AND min_volume <= $1 OR min_volume = 0
-        """,
-            volume,
-        )
+        if volume == 0:
+            data = await self._db.fetch(
+                f"""
+                SELECT * FROM {self.__table} WHERE strategies LIKE '%{strategies[strategy]}%' AND notifications = TRUE AND min_volume <= $1
+            """,
+                volume,
+            )
+        else:
+            data = await self._db.fetch(
+                f"""SELECT * FROM {self.__table} WHERE strategies LIKE '%{strategies[strategy]}%' AND notifications = TRUE """
+            )
         if data is None:
             return None
         return [
