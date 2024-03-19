@@ -57,7 +57,6 @@ async def get_futures(client: AsyncClient, tickers: List[str] = None) -> List[Di
     shares = []
     for method in ["futures"]:
         for item in (await getattr(instruments, method)()).instruments:
-            if item.
             shares.append(
                 {
                     "name": item.name,
@@ -103,7 +102,7 @@ async def buy_limit_order(
         quantity=quantity,
         direction=OrderDirection.ORDER_DIRECTION_BUY,
         order_type=OrderType.ORDER_TYPE_LIMIT,
-        order_id=str(datetime.datetime.utcnow().timestamp()),
+        order_id=str(datetime.datetime.now(datetime.UTC).timestamp()),
     )
     if order.execution_report_status not in (1, 4):
         print(figi, order)
