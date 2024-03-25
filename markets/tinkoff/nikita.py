@@ -240,6 +240,14 @@ async def stop_orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
                     price_sell = stop_loss_price
                     price_buy = stop_loss_price / (1 - StrategyConfig.stop_loss / 100)
                     profit = -lots_traded * (price_sell - price_buy)
+                else:
+                    price_sell = take_profit_price
+                    purchases["orders"][ticker]["order_id"] = None
+                    purchases["orders"][ticker][
+                        "last_sell"
+                    ] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+                    purchases["available"] += lots_traded * price_sell
+                    continue
                 purchases["available"] += lots_traded * price_sell
                 messages_to_send.append(
                     f"СТРАТЕГИЯ НИКИТЫ ПРОДАЖА\n\n{purchase_text}\n\nПродажа {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} по цене {price_sell}\n\nПрибыль: {round(profit, 2)}"

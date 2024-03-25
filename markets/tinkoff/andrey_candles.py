@@ -1,15 +1,15 @@
 import datetime
+from typing import Dict
 
 import asyncio
 import tinkoff
-from tinkoff.invest.utils import quotation_to_decimal
 from tinkoff.invest import (
     AsyncClient,
     CandleInterval,
 )
 
 from bot import TG_Bot
-from markets.tinkoff.candle_model import Candle, candle_type_analysis
+from markets.tinkoff.candle_model import CustomCandle
 from config import Config
 from markets.tinkoff.utils import get_shares
 
@@ -29,7 +29,7 @@ async def market_review_candles(tg_bot: TG_Bot):
         else:
             return
         hours_delta = 24 * days_delta
-        last_day_data = {}
+        last_day_data: Dict[str:CustomCandle] = {}
         for share in shares:
             async for candle in client.get_all_candles(
                 figi=share["figi"],
@@ -38,103 +38,56 @@ async def market_review_candles(tg_bot: TG_Bot):
                 to=tinkoff.invest.utils.now(),
                 interval=CandleInterval.CANDLE_INTERVAL_DAY,
             ):
+                custom_candle = CustomCandle(candle)
                 if (time_now - candle.time.replace(tzinfo=None)).days > days_delta:
-                    last_day_data[share["figi"]] = (
-                        candle.volume,
-                        float(quotation_to_decimal(candle.close)),
-                    )
+                    last_day_data[share["figi"]] = custom_candle
                     # print(share["ticker"] + " " + str(candle))
                 elif (time_now - candle.time.replace(tzinfo=None)).days == 1 and share[
                     "figi"
                 ] in last_day_data:
                     # print(share["ticker"], candle)
-                    candle_high_shadow_val = float(
-                        quotation_to_decimal(
-                            candle.high - max(candle.open, candle.close)
-                        )
-                    )
-                    candle_low_shadow_val = float(
-                        quotation_to_decimal(
-                            min(candle.open, candle.close) - candle.low
-                        )
-                    )
-                    price_delta = float(quotation_to_decimal(candle.high - candle.low))
-                    percent_price_delta = round(
-                        (
-                            (
-                                float(quotation_to_decimal(candle.close))
-                                - last_day_data[share["figi"]][1]
-                            )
-                            / last_day_data[share["figi"]][1]
-                        )
-                        * 100,
-                        2,
-                    )
-                    candle_body_val = abs(
-                        float(quotation_to_decimal(candle.open))
-                        - float(quotation_to_decimal(candle.close))
-                    )
-                    if price_delta == 0:
-                        candle_low_shadow_perc = 0.0
-                        candle_high_shadow_perc = 0.0
-                        candle_body_perc = 0.0
-                    else:
-                        candle_high_shadow_perc = (
-                            100 * candle_high_shadow_val / price_delta
-                        )
-                        candle_low_shadow_perc = (
-                            100 * candle_low_shadow_val / price_delta
-                        )
-                        candle_body_perc = 100 * candle_body_val / price_delta
-                    if candle.open > candle.close:
-                        candle_color = "red"
-                    else:
-                        candle_color = "green"
-                    custom_candle = Candle(
-                        high_shadow_val=candle_high_shadow_val,
-                        low_shadow_val=candle_low_shadow_val,
-                        high_shadow_perc=candle_high_shadow_perc,
-                        low_shadow_perc=candle_low_shadow_perc,
-                        body_val=candle_body_val,
-                        body_perc=candle_body_perc,
-                        length=price_delta,
-                        color=candle_color,
-                        type="",
-                    )
-                    candle_type = candle_type_analysis(custom_candle, candle.volume)
-                    custom_candle.type = candle_type
-                    if candle_type not in [
+                    custom_candle.calc_type()
+                    prev_custom_candle: CustomCandle = last_day_data[share["figi"]]
+                    if custom_candle.type not in [
                         "trash",
                         "green_middle",
                         "red_middle",
                     ]:
-                        procent_volume = candle.volume / last_day_data[share["figi"]][0]
+                        procent_volume = (
+                            custom_candle.volume / prev_custom_candle.volume
+                        )
                         if procent_volume >= 1:
                             volume_smile = "🟢"
                         else:
                             volume_smile = "🔴"
                         money_volume = (
-                            candle.volume
+                            custom_candle.volume
                             * share["lot"]
-                            * (
-                                float(quotation_to_decimal(candle.low))
-                                + price_delta / 2
-                            )
+                            * (custom_candle.low + custom_candle.length / 2)
                         )
                         if money_volume > 10**9:
                             volume_string = f"{round(money_volume/10**9, 2)} МЛРД"
                         else:
                             volume_string = f"{round(money_volume/10**6)} МЛН"
+                        percent_price_delta = round(
+                            (
+                                (custom_candle.close - prev_custom_candle.close)
+                                / prev_custom_candle.close
+                            )
+                            * 100,
+                            2,
+                        )
                         message_to_send = f"""
 #{share["ticker"]} {percent_price_delta}% {volume_string} ₽
 <b>{share["name"]}</b>
 
-Определён тип свечи: {candle_type}
+Определён тип свечи: {custom_candle.type}
 Изменение цены: {percent_price_delta}%
 Объём: {volume_smile} {round(procent_volume*100, 2)}%
-Время: {time_now:%Y-%m}-{candle.time.day}
-Цена: {float(quotation_to_decimal(candle.close))} ₽"""
+Время: {candle.time.strftime("%d-%m-%Y")}
+Цена: {custom_candle.close} ₽"""
                         # print(message_to_send)
                         await tg_bot.send_signal(
                             message_to_send, "andrey", money_volume
                         )
+        print("End")

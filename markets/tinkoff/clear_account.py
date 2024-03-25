@@ -80,7 +80,7 @@ async def sell(
 
 
 async def sell_all_positions():
-    async with AsyncClient(Config.NIKITA_TOKEN) as client:
+    async with AsyncClient(Config.ANDREY_TOKEN) as client:
         accounts = await client.users.get_accounts()
         shares = await get_shares(client)
         for position in (

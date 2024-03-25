@@ -1,33 +1,61 @@
-from dataclasses import dataclass
 from typing import List
+from dataclasses import dataclass
+
+
+from tinkoff.invest import HistoricCandle
+from tinkoff.invest.utils import quotation_to_decimal
 
 
 @dataclass
-class Candle:
+class CustomCandle:
     """Class representing trading candle"""
 
-    high_shadow_val: float
-    low_shadow_val: float
-    high_shadow_perc: float
-    low_shadow_perc: float
-    body_val: float
-    body_perc: float
-    length: float
-    color: str
-    type: str
+    def __init__(self, candle: HistoricCandle):
+        self.open = float(quotation_to_decimal(candle.open))
+        self.high = float(quotation_to_decimal(candle.high))
+        self.low = float(quotation_to_decimal(candle.low))
+        self.close = float(quotation_to_decimal(candle.close))
+        self.volume = candle.volume
+        self.time = candle.time
+        self.high_shadow_val = self.high - max(self.open, self.close)
+        self.low_shadow_val = min(self.open, self.close) - self.low
+        self.length = self.high - self.low
+        self.body_val = abs(self.open - self.close)
+        self.length_perc = self.length / self.high * 100
+        self.type = None
+        if self.length == 0:
+            self.low_shadow_perc = 0.0
+            self.high_shadow_perc = 0.0
+            self.body_perc = 0.0
+        else:
+            self.high_shadow_perc = 100 * self.high_shadow_val / self.length
+            self.low_shadow_perc = 100 * self.low_shadow_val / self.length
+            self.body_perc = 100 * self.body_val / self.length
+        if self.open > self.close:
+            self.color = "red"
+        else:
+            self.color = "green"
 
-    def to_dict(self) -> dict:
-        return {
-            "high_shadow_val": self.high_shadow_val,
-            "low_shadow_val": self.low_shadow_val,
-            "high_shadow_perc": self.high_shadow_perc,
-            "low_shadow_perc": self.low_shadow_perc,
-            "body_val": self.body_val,
-            "body_perc": self.body_perc,
-            "length": self.length,
-            "color": self.color,
-            "type": self.type,
-        }
+    def calc_type(self):
+        vol_treshold = (
+            0  # объем рынка, ниже которого определение типа свечи нецелесообразно
+        )
+        if vol_treshold < self.volume:
+            for candle_function in (
+                cross_5_low,
+                cross_5_high,
+                hammer_candle_25,
+                star_candle_25,
+                escimo,
+                hammer_candle,
+                star_candle,
+                middle_candle,
+            ):
+                candle_type = candle_function(self)
+                if candle_type:
+                    self.type = candle_type
+                    return
+        self.type = "trash"
 
 
 @dataclass
@@ -41,33 +69,10 @@ class TradeData:
     low: float
     close: float
     volume: float
-    candle: Candle
+    candle: CustomCandle
 
 
-def candle_type_analysis(candle: Candle, vol) -> str:
-    vol_treshold = (
-        0  # объем рынка, ниже которого определение типа свечи нецелесообразно
-    )
-
-    if vol_treshold < vol:
-        for candle_function in (
-            cross_5_low,
-            cross_5_high,
-            hammer_candle_25,
-            star_candle_25,
-            escimo,
-            hammer_candle,
-            star_candle,
-            middle_candle,
-        ):
-            checked_candle = candle_function(candle)
-            if checked_candle:
-                return checked_candle
-
-    return "trash"
-
-
-def hammer_candle(candle: Candle) -> str | bool:
+def hammer_candle(candle: CustomCandle) -> str | bool:
     treshold = 0  # длина свечи (от лоу до хай), ниже которого определение типа свечи нецелесообразно
 
     if (
@@ -81,7 +86,7 @@ def hammer_candle(candle: Candle) -> str | bool:
     return False
 
 
-def star_candle(candle: Candle) -> str | bool:
+def star_candle(candle: CustomCandle) -> str | bool:
     treshold = 0  # длина свечи (от лоу до хай), ниже которого определение типа свечи нецелесообразно
 
     if (
@@ -95,7 +100,7 @@ def star_candle(candle: Candle) -> str | bool:
     return False
 
 
-def middle_candle(candle: Candle) -> str | bool:
+def middle_candle(candle: CustomCandle) -> str | bool:
     treshold = 0  # длина свечи (от лоу до хай), ниже которого определение типа свечи нецелесообразно
 
     if (
@@ -135,7 +140,7 @@ def trigger_hammer_middle(
 
 
 def hammer_candle_25(
-    candle: Candle,
+    candle: CustomCandle,
 ) -> str | bool:  # свеча молот - где "тело + верхняя часть" в четверть
     treshold = 0
 
@@ -146,7 +151,7 @@ def hammer_candle_25(
 
 
 def star_candle_25(
-    candle: Candle,
+    candle: CustomCandle,
 ) -> str | bool:  # свеча звезда - где "тело + нижняя часть" в четверть
     treshold = 0
 
@@ -157,7 +162,7 @@ def star_candle_25(
 
 
 def escimo(
-    candle: Candle,
+    candle: CustomCandle,
 ) -> str | bool:  # свеча 'эскимо' - большое зеленое тело, нижняя тень больше верхней
     treshold = 0  # длина свечи (от лоу до хай), ниже которого определение типа свечи нецелесообразно
 
@@ -173,7 +178,7 @@ def escimo(
 
 
 def cross_5_low(
-    candle: Candle,
+    candle: CustomCandle,
 ) -> (
     str | bool
 ):  # свеча 'крест лоу' - узкое тело, маленькая верхняя тень, большое нисходящее движение
@@ -184,7 +189,7 @@ def cross_5_low(
 
 
 def cross_5_high(
-    candle: Candle,
+    candle: CustomCandle,
 ) -> (
     str | bool
 ):  # свеча 'крест' - узкое тело, маленькая большая тень, большое восходящее движение

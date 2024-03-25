@@ -12,6 +12,7 @@ from markets.tinkoff.nikita import (
     orders_check_nikita,
     stop_orders_check_nikita,
 )
+
 from markets.tinkoff.andrey_absorbation import (
     market_review_andrey,
     fill_market_data_andrey,
@@ -125,13 +126,16 @@ class Launcher:
             second="30",
             args=[self.strategies_data],
         )
-        scheduler.start()
+
+        # scheduler.start()
         await fill_market_data_andrey(self.strategies_data["andrey"])
+        # await asyncio.sleep(20)
         tasks = [
             # market_review_candles(self.tg_bot),
             # market_review_scarping(self.tg_bot),
             # market_review_andrey(self.tg_bot, self.strategies_data["andrey"]),
             # market_review_george(self.tg_bot),
+            # market_review_candles(self.tg_bot),
             self.main(),
         ]
         await asyncio.gather(*tasks)

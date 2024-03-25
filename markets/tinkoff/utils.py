@@ -11,6 +11,8 @@ from tinkoff.invest import (
     PostOrderResponse,
     StopOrderExpirationType,
     Quotation,
+    OperationState,
+    Operation,
 )
 from tinkoff.invest.services import InstrumentsService
 from tinkoff.invest.utils import quotation_to_decimal
@@ -170,3 +172,16 @@ def float_to_quotation(value):
 
 def moneyvalue_to_float(moneyvalue):
     return moneyvalue.units + moneyvalue.nano / 1_000_000_000
+
+
+# async def get_history(client: AsyncClient) -> List[Operation]:
+#     account_id = await get_account_id(client)
+#     today = datetime.datetime.today()
+#     today_at_10_am = datetime.datetime.combine(today, time(10, 0))
+#     return (
+#         await client.operations.get_operations(
+#             account_id=account_id,
+#             from_=datetime.datetime,
+#             state=OperationState.OPERATION_STATE_EXECUTED,
+#         )
+#     ).operations

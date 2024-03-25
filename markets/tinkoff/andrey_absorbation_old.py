@@ -10,7 +10,6 @@ from tinkoff.invest.exceptions import AioRequestError
 
 from bot import TG_Bot
 from config import Config
-from markets.tinkoff.candle_model import CustomCandle
 from markets.tinkoff.utils import (
     get_shares,
     buy_market_order,
@@ -22,34 +21,14 @@ from markets.tinkoff.utils import (
 
 
 class StrategyConfig:
-    take_profit = 2.5  # 2,
-    stop_loss = 0.5  # 0.5
-    dynamic_border = True  # статичные или динамические границы ордеров .. идея на потом
-    # dynamic_border_mult 2,  # 1.25, # насколько двигаем границу, при достижении профита, .. идея на потом
+    take_profit = 1
+    stop_loss = 2
+    dynamic_border = True  # статичные или динамические границы ордеров
+    dynamic_border_mult = 1.25  # насколько двигаем границу, при достижении профита, тут нужны пояснения от Андрея
     falling_indicator_frame_count = 5
     volume = 0  # поизучать
     comission = 0.05  # в процентах
-    short_comission = 0.06  # или 0.07, комиссия ежедневная
-    money_in_order = 100000  # виртуальная сумма для сделки
-    # параметры для Бычьего и Медвежьего поглощения
-    first_candle_perc_ba_and_ba = 1
-    second_candle_perc_ba_and_ba = 1.5
-    body_perc_ba_and_ba = 55  # 70  # 55
-    # параметры для Темных облаков и Пронзающей свечи
-    first_candle_perc_pc_and_dc = 1.5
-    second_candle_perc_pc_and_dc = 1.5
-    body_perc_pc_and_dc = 55  # 70  # 55
-    # параметры для Бычьего и Медвежьего перекрестия
-    first_candle_perc_bс_and_bс = 1  # 1.2 1.5
-    second_candle_perc_bс_and_bс = 1.5
-    body_perc_bс_and_bс = 55  # 70  # 55
-    # параметры для молота и падающей звезды
-    hammer_candle_length_perc = 1.5
-    hammer_low_shadow_perc = 75
-    hammer_body_perc = 10
-    star_candle_length_perc = 1.5
-    star_high_shadow_perc = 75
-    star_body_perc = 10
+    money_in_order = 10000  # виртуальная сумма для сделки
 
 
 def get_candle_body_perc(candle: HistoricCandle) -> float:
@@ -66,215 +45,68 @@ def get_candle_body_perc(candle: HistoricCandle) -> float:
 async def analisys(
     share: dict, current_candle: HistoricCandle, purchases: dict, buy: bool = True
 ):
-    current_custom_candle = CustomCandle(current_candle)
     if not purchases.get(share["ticker"]):
-        purchases[share["ticker"]] = [current_custom_candle]
+        purchases[share["ticker"]] = (
+            float(quotation_to_decimal(current_candle.open)),
+            float(quotation_to_decimal(current_candle.close)),
+            get_candle_body_perc(current_candle),
+            [float(quotation_to_decimal(current_candle.open))],
+        )
+        return None
+    prev_candle_open, prev_candle_close, prev_candle_body_perc, market_data = purchases[
+        share["ticker"]
+    ]
+    market_data.append(float(quotation_to_decimal(current_candle.open)))
+
+    if len(market_data) > StrategyConfig.falling_indicator_frame_count:
+        market_data = market_data[1:]
+
+    current_candle_body_perc = get_candle_body_perc(current_candle)
+    falling_market_indicator = falling_indicator(market_data)
+
+    purchases[share["ticker"]] = (
+        float(quotation_to_decimal(current_candle.open)),
+        float(quotation_to_decimal(current_candle.close)),
+        current_candle_body_perc,
+        market_data,
+    )
+
+    if len(market_data) < StrategyConfig.falling_indicator_frame_count:
         return None
 
-    purchases[share["ticker"]].append(current_custom_candle)
-
-    if len(purchases[share["ticker"]]) < StrategyConfig.falling_indicator_frame_count:
-        return None
-    elif len(purchases[share["ticker"]]) > StrategyConfig.falling_indicator_frame_count:
-        purchases[share["ticker"]] = purchases[share["ticker"]][1:]
-
-    falling_market_indicator = falling_indicator(purchases[share["ticker"]])
-    prev_custom_candle = purchases[share["ticker"]][-1]
-
-    async def create_order(order_candle: CustomCandle):
-        print(order_candle, share["ticker"])
+    if (
+        (
+            (
+                (prev_candle_open <= prev_candle_close)
+                & (current_candle.open > current_candle.close)
+            )
+            & (prev_candle_body_perc > 20)
+            & (current_candle_body_perc > 20)
+        )
+        & (prev_candle_open <= float(quotation_to_decimal(current_candle.open)))
+        & falling_market_indicator
+        and buy
+        and not purchases["orders"][share["ticker"]].get("order_id", None)
+    ):
+        candle_close = float(quotation_to_decimal(current_candle.close))
         quantity_lot = int(
             min(StrategyConfig.money_in_order, purchases["available"])
-            // (order_candle.close * share["lot"])
+            // (candle_close * share["lot"])
         )
-        if quantity_lot > 0 and buy and order_candle.volume > 50 * 10**6:
-            order_candle.close -= order_candle.close % share["min_price_increment"]
+        if quantity_lot > 0:
+            candle_close -= candle_close % share["min_price_increment"]
             async with AsyncClient(Config.ANDREY_TOKEN) as client:
                 buy_trade = await buy_market_order(share["figi"], quantity_lot, client)
             purchases["orders"][share["ticker"]]["order_id"] = buy_trade.order_id
-            purchases["available"] -= order_candle.close * quantity_lot * share["lot"]
-            return f"СТРАТЕГИЯ АНДРЕЯ ЗАЯВКА {order_candle.type}\n\nЗаявка на {share['ticker']} {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} по цене {order_candle.close}\nКол-во: {quantity_lot * share['lot']}"
-
-    # if (
-    #     (
-    #         (
-    #             (prev_candle_open < prev_candle_close)
-    #             & (current_candle.open => current_candle.close)
-    #         )
-    #         & (prev_candle_body_perc > 20)
-    #         & (current_candle_body_perc > 20)
-    #     )
-    #     & (prev_candle_open <= float(quotation_to_decimal(current_candle.open)))
-    #     & falling_market_indicator
-    #     and buy
-    #     and not purchases["orders"][share["ticker"]].get("order_id", None)
-    # ):
-    #     candle_close = float(quotation_to_decimal(current_candle.close))
-    #     quantity_lot = int(
-    #         min(StrategyConfig.money_in_order, purchases["available"])
-    #         // (candle_close * share["lot"])
-    #     )
-    #     if quantity_lot > 0:
-    #         candle_close -= candle_close % share["min_price_increment"]
-    #         async with AsyncClient(StrategyConfig.ANDREY_TOKEN) as client:
-    #             buy_trade = await buy_market_order(share["figi"], quantity_lot, client)
-    #         purchases["orders"][share["ticker"]]["order_id"] = buy_trade.order_id
-    #         purchases["available"] -= candle_close * quantity_lot * share["lot"]
-    #         return f"СТРАТЕГИЯ АНДРЕЯ ЗАЯВКА\n\nЗаявка на {share['ticker']} {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} по цене {candle_close}\nКол-во: {quantity_lot * share['lot']}"
-
-    if (
-        (prev_custom_candle.color == "red")
-        & (current_custom_candle.color == "green")
-        & (prev_custom_candle.length_perc >= StrategyConfig.first_candle_perc_pc_and_dc)
-        & (
-            current_custom_candle.length_perc
-            >= StrategyConfig.second_candle_perc_pc_and_dc
-        )
-        & (prev_custom_candle.body_perc > StrategyConfig.body_perc_pc_and_dc)
-        & (current_custom_candle.body_perc > StrategyConfig.body_perc_pc_and_dc)
-        & (prev_custom_candle.high > current_custom_candle.close)
-        & (prev_custom_candle.low > current_custom_candle.open)
-        & (falling_market_indicator)
-    ):
-        print(1)
-        current_custom_candle.type = "ПРОНЗАЮЩАЯ СВЕЧА"
-        return await create_order(current_custom_candle)
-    # вход в шорт двухдневная модель "Тёмные облака"
-    elif (
-        (prev_custom_candle.color == "green")
-        & (current_custom_candle.color == "red")
-        & (prev_custom_candle.length_perc >= StrategyConfig.first_candle_perc_pc_and_dc)
-        & (
-            current_custom_candle.length_perc
-            >= StrategyConfig.second_candle_perc_pc_and_dc
-        )
-        & (prev_custom_candle.body_perc >= StrategyConfig.body_perc_pc_and_dc)
-        & (current_custom_candle.body_perc >= StrategyConfig.body_perc_pc_and_dc)
-        & (prev_custom_candle.high < current_custom_candle.open)
-        & (prev_custom_candle.low < current_custom_candle.close)
-        & (not falling_market_indicator)
-    ):
-        # purchase = short_input(input_list[i + 1], StrategyConfig, patern="Темные облака")
-        # _purchase_list.append(purchase)
-        print(1)
-        pass
-    # вход в лонг двухдневная модель "Бычье поглощение"
-    elif (
-        (prev_custom_candle.color == "red")
-        & (current_custom_candle.color == "green")
-        & (prev_custom_candle.length_perc >= StrategyConfig.first_candle_perc_ba_and_ba)
-        & (
-            current_custom_candle.length_perc
-            >= StrategyConfig.second_candle_perc_ba_and_ba
-        )
-        & (prev_custom_candle.body_perc > StrategyConfig.body_perc_ba_and_ba)
-        & (current_custom_candle.body_perc > StrategyConfig.body_perc_ba_and_ba)
-        & (prev_custom_candle.high < current_custom_candle.close)
-        & (prev_custom_candle.low > current_custom_candle.open)
-        & (falling_market_indicator)
-    ):
-        print(1)
-        current_custom_candle.type = "БЫЧЬЕ ПОГЛОЩЕНИЕ"
-        return await create_order(current_custom_candle)
-    # вход в шорт двухдневная модель "Медвежье поглощение"
-    elif (
-        (prev_custom_candle.color == "green")
-        & (current_custom_candle.color == "red")
-        & (prev_custom_candle.length_perc >= StrategyConfig.first_candle_perc_ba_and_ba)
-        & (
-            current_custom_candle.length_perc
-            >= StrategyConfig.second_candle_perc_ba_and_ba
-        )
-        & (prev_custom_candle.body_perc > StrategyConfig.body_perc_ba_and_ba)
-        & (current_custom_candle.body_perc > StrategyConfig.body_perc_ba_and_ba)
-        & (prev_custom_candle.high < current_custom_candle.open)
-        & (prev_custom_candle.low > current_custom_candle.close)
-        & (not falling_market_indicator)
-    ):
-        # purchase = short_input(input_list[i + 1], StrategyConfig, patern="Медвежье поглощение")
-        # _purchase_list.append(purchase)
-        print(1)
-        pass
-    # вход в лонг двухдневная модель "Бычье перекрытие"
-    elif (
-        (prev_custom_candle.color == "red")
-        & (current_custom_candle.color == "green")
-        & (prev_custom_candle.length_perc >= StrategyConfig.first_candle_perc_bс_and_bс)
-        & (
-            current_custom_candle.length_perc
-            >= StrategyConfig.second_candle_perc_bс_and_bс
-        )
-        & (prev_custom_candle.body_perc > StrategyConfig.body_perc_bс_and_bс)
-        & (current_custom_candle.body_perc > StrategyConfig.body_perc_bс_and_bс)
-        & (prev_custom_candle.high < current_custom_candle.close)
-        & (prev_custom_candle.close > current_custom_candle.open)
-        & (falling_market_indicator)
-    ):
-        print(1)
-        current_custom_candle.type = "БЫЧЬЕ ПЕРЕКРЫТИЕ"
-        return await create_order(current_custom_candle)
-    # вход в шорт двухдневная модель Медвежье перекрытие
-    elif (
-        (prev_custom_candle.color == "green")
-        & (current_custom_candle.color == "red")
-        & (prev_custom_candle.length_perc >= StrategyConfig.first_candle_perc_bс_and_bс)
-        & (
-            current_custom_candle.length_perc
-            >= StrategyConfig.second_candle_perc_bс_and_bс
-        )
-        & (prev_custom_candle.body_perc > StrategyConfig.body_perc_bс_and_bс)
-        & (current_custom_candle.body_perc > StrategyConfig.body_perc_bс_and_bс)
-        & (prev_custom_candle.close < current_custom_candle.open)
-        & (prev_custom_candle.open > current_custom_candle.close)
-        & (not falling_market_indicator)
-    ):
-        # purchase = short_input(input_list[i + 1], StrategyConfig, patern="Медвежье перекрытие")
-        # _purchase_list.append(purchase)
-        print(1)
-        pass
-    # вход в лонг модель однодневный молот
-    if (
-        (current_custom_candle.color == "green")
-        & (
-            current_custom_candle.length_perc
-            >= StrategyConfig.hammer_candle_length_perc
-        )
-        & (
-            current_custom_candle.low_shadow_perc
-            >= StrategyConfig.hammer_low_shadow_perc
-        )
-        & (current_custom_candle.body_perc > StrategyConfig.hammer_body_perc)
-        & (falling_market_indicator)
-    ):
-        print(1)
-        current_custom_candle.type = "ОДНОДНЕВНЫЙ МОЛОТ"
-        return await create_order(current_custom_candle)
-    # вход в шорт модель однодневная падающая звезда
-    elif (
-        (current_custom_candle.color == "red")
-        & (current_custom_candle.length_perc >= StrategyConfig.star_candle_length_perc)
-        & (
-            current_custom_candle.high_shadow_perc
-            >= StrategyConfig.star_high_shadow_perc
-        )
-        & (current_custom_candle.body_perc > StrategyConfig.star_body_perc)
-        & (not falling_market_indicator)
-    ):
-        # purchase = short_input(
-        #     input_list[i + 1], StrategyConfig, patern="Однодневная падающая звезда"
-        # )
-        # _purchase_list.append(purchase)
-        print(1)
-        pass
-
+            purchases["available"] -= candle_close * quantity_lot * share["lot"]
+            return f"СТРАТЕГИЯ АНДРЕЯ ЗАЯВКА\n\nЗаявка на {share['ticker']} {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} по цене {candle_close}\nКол-во: {quantity_lot * share['lot']}"
     return None
 
 
 # индикатор того, что рынок до появления сигнала - падающий
-def falling_indicator(input_list: List[CustomCandle]) -> bool:
-    opens_list = [candle.open for candle in input_list]
+def falling_indicator(input_list: List[float]) -> bool:
     return (
-        sum(opens_list) / len(opens_list) >= opens_list[-1]
+        sum(input_list) / len(input_list) >= input_list[-1]
     )  # рынок "падающий" - если текущая цена ниже среднего за falling_indicator_frame_count дней
 
 
@@ -293,8 +125,8 @@ async def fill_market_data_andrey(purchases: dict):
         for share in shares:
             async for candle in client.get_all_candles(
                 figi=share["figi"],
-                from_=now_time - datetime.timedelta(days=15),
-                to=now_time - datetime.timedelta(days=0),
+                from_=now_time - datetime.timedelta(days=10),
+                to=now_time - datetime.timedelta(days=2),
                 interval=CandleInterval.CANDLE_INTERVAL_DAY,
             ):
                 await analisys(share, candle, purchases, buy=False)
