@@ -90,4 +90,3 @@ async def market_review_candles(tg_bot: TG_Bot):
                         await tg_bot.send_signal(
                             message_to_send, "andrey", money_volume
                         )
-        print("End")

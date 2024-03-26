@@ -1,4 +1,5 @@
 import datetime
+import asyncio
 from typing import Optional, List, Dict, Tuple
 
 from tinkoff.invest import (
@@ -14,6 +15,7 @@ from tinkoff.invest import (
     OperationState,
     Operation,
 )
+from tinkoff.invest.async_services import AsyncServices
 from tinkoff.invest.services import InstrumentsService
 from tinkoff.invest.utils import quotation_to_decimal
 
@@ -172,6 +174,24 @@ def float_to_quotation(value):
 
 def moneyvalue_to_float(moneyvalue):
     return moneyvalue.units + moneyvalue.nano / 1_000_000_000
+
+
+async def ensure_market_open(figi: str, client: AsyncServices):
+    trading_status = await client.market_data.get_trading_status(figi=figi)
+    while not (
+        trading_status.market_order_available_flag
+        and trading_status.api_trade_available_flag
+    ):
+        await asyncio.sleep(60)
+        trading_status = await client.market_data.get_trading_status(figi=figi)
+
+
+async def get_last_price(figi: str, client: AsyncServices) -> float:
+    return float(
+        quotation_to_decimal(
+            (await client.market_data.get_last_prices(figi=[figi])).last_prices[0].price
+        )
+    )
 
 
 # async def get_history(client: AsyncClient) -> List[Operation]:

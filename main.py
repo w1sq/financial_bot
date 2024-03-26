@@ -11,6 +11,7 @@ from markets.tinkoff.nikita import (
     market_review_nikita,
     orders_check_nikita,
     stop_orders_check_nikita,
+    fill_data_nikita,
 )
 
 from markets.tinkoff.andrey_absorbation import (
@@ -81,18 +82,21 @@ class Launcher:
         scheduler.add_job(
             market_review_nikita,
             "cron",
+            hour="10-23",
             second="00",
             args=[self.tg_bot, self.strategies_data["nikita"]],
         )
         scheduler.add_job(
             orders_check_nikita,
             "cron",
+            hour="10-23",
             second="00",
             args=[self.tg_bot, self.strategies_data["nikita"]],
         )
         scheduler.add_job(
             stop_orders_check_nikita,
             "cron",
+            hour="10-23",
             second="00",
             args=[self.tg_bot, self.strategies_data["nikita"]],
         )
@@ -106,12 +110,14 @@ class Launcher:
             orders_check_andrey,
             "cron",
             second="00",
+            hour="10-23",
             args=[self.tg_bot, self.strategies_data["andrey"]],
         )
         scheduler.add_job(
             stop_orders_check_andrey,
             "cron",
             second="00",
+            hour="10-23",
             args=[self.tg_bot, self.strategies_data["andrey"]],
         )
         scheduler.add_job(
@@ -127,7 +133,9 @@ class Launcher:
             args=[self.strategies_data],
         )
 
-        # scheduler.start()
+        scheduler.start()
+        # await fill_data_nikita()
+        # await market_review_nikita(self.tg_bot, self.strategies_data["nikita"])
         await fill_market_data_andrey(self.strategies_data["andrey"])
         # await asyncio.sleep(20)
         tasks = [
