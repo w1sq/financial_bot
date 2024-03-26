@@ -78,6 +78,7 @@ class Launcher:
 
     async def tasks_init(self):
         await self.create_bot()
+
         scheduler = AsyncIOScheduler()
         scheduler.add_job(
             market_review_nikita,
@@ -132,17 +133,12 @@ class Launcher:
             second="30",
             args=[self.strategies_data],
         )
-
         scheduler.start()
-        # await fill_data_nikita()
-        # await market_review_nikita(self.tg_bot, self.strategies_data["nikita"])
+
+        await fill_data_nikita()
         await fill_market_data_andrey(self.strategies_data["andrey"])
-        # await asyncio.sleep(20)
         tasks = [
-            # market_review_candles(self.tg_bot),
-            # market_review_scarping(self.tg_bot),
             # market_review_andrey(self.tg_bot, self.strategies_data["andrey"]),
-            # market_review_george(self.tg_bot),
             # market_review_candles(self.tg_bot),
             self.main(),
         ]

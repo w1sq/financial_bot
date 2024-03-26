@@ -88,5 +88,5 @@ async def market_review_candles(tg_bot: TG_Bot):
 Цена: {custom_candle.close} ₽"""
                         # print(message_to_send)
                         await tg_bot.send_signal(
-                            message_to_send, "andrey", money_volume
+                            message_to_send, "andrey", int(money_volume)
                         )

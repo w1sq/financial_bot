@@ -30,7 +30,7 @@ class StrategyConfig:
     volume = 0  # поизучать
     comission = 0.05  # в процентах
     short_comission = 0.06  # или 0.07, комиссия ежедневная
-    money_in_order = 100000  # виртуальная сумма для сделки
+    money_in_order = 10000  # виртуальная сумма для сделки
     # параметры для Бычьего и Медвежьего поглощения
     first_candle_perc_ba_and_ba = 1
     second_candle_perc_ba_and_ba = 1.5
@@ -96,13 +96,22 @@ async def analisys(
             min(StrategyConfig.money_in_order, purchases["available"])
             // (order_candle.close * share["lot"])
         )
-        if quantity_lot > 0 and buy and order_candle.volume > 50 * 10**6:
+        if (
+            quantity_lot > 0
+            and buy
+            and (
+                prev_custom_candle.volume
+                * share["lot"]
+                * (prev_custom_candle.low + prev_custom_candle.length / 2)
+            )
+            > 100 * 10**6
+        ):
             order_candle.close -= order_candle.close % share["min_price_increment"]
             async with AsyncClient(Config.ANDREY_TOKEN) as client:
                 buy_trade = await buy_market_order(share["figi"], quantity_lot, client)
             purchases["orders"][share["ticker"]]["order_id"] = buy_trade.order_id
             purchases["available"] -= order_candle.close * quantity_lot * share["lot"]
-            return f"СТРАТЕГИЯ АНДРЕЯ ЗАЯВКА {order_candle.type}\n\nЗаявка на {share['ticker']} {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} по цене {order_candle.close}\nКол-во: {quantity_lot * share['lot']}"
+            return f"СТРАТЕГИЯ АНДРЕЯ ЗАЯВКА {order_candle.type}\n\nЗаявка на {share['name']}\n{share['ticker']} {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} по цене {order_candle.close}\nКол-во: {quantity_lot * share['lot']}"
 
     if (
         (prev_custom_candle.color == "red")
@@ -261,8 +270,11 @@ async def fill_market_data_andrey(purchases: dict):
         for share in shares:
             if share["ticker"] not in purchases["orders"].keys():
                 purchases["orders"][share["ticker"]] = {
-                    "min_price_increment": share["min_price_increment"]
+                    "min_price_increment": share["min_price_increment"],
+                    "lots": share["lot"],
                 }
+            elif "lots" not in purchases["orders"][share["ticker"]].keys():
+                purchases["orders"][share["ticker"]]["lots"] = share["lot"]
         for share in shares:
             async for candle in client.get_all_candles(
                 figi=share["figi"],
@@ -288,7 +300,7 @@ async def orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
                 == OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL
             ):
                 if order.lots_executed > 0:
-                    purchase_text = f"Покупка {ticker} {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')} по цене {moneyvalue_to_float(order.average_position_price)} с коммисией {moneyvalue_to_float(order.executed_commission)}\nКол-во: {order.lots_executed}"
+                    purchase_text = f"Покупка {ticker} {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')} по цене {moneyvalue_to_float(order.average_position_price)} с коммисией {moneyvalue_to_float(order.executed_commission)}\nКол-во: {order.lots_executed*purchases['orders'][ticker]['lots']}"
                     messages_to_send.append(
                         "СТРАТЕГИЯ АНДРЕЯ ПОКУПКА\n\n" + purchase_text
                     )

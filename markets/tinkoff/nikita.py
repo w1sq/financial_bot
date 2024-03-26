@@ -81,8 +81,10 @@ def strategy(last_price: float, ticker: str) -> bool:
 
 
 async def analise_share(share: dict, purchases: dict, client: AsyncServices):
-    local_data_bollinger = data_bollinger[share["ticker"]]
-    local_data_rsi = data_rsi[share["ticker"]]
+    local_data_bollinger = data_bollinger.get(share["ticker"])
+    local_data_rsi = data_rsi.get(share["ticker"])
+    if not local_data_bollinger or not local_data_rsi:
+        return None
     last_price = await get_last_price(share["figi"], client)
     share_status = False
     if datetime.datetime.now().minute == 30:
@@ -150,7 +152,7 @@ async def fill_data_nikita():
                     datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc),
                     datetime.time(6, 0),
                 ).replace(tzinfo=datetime.timezone.utc)
-                - datetime.timedelta(days=4),
+                - datetime.timedelta(days=2),
                 interval=CandleInterval.CANDLE_INTERVAL_1_MIN,
             ):
                 await analise_historic_candle(candle, share)
@@ -180,8 +182,8 @@ async def analise_historic_candle(candle: HistoricCandle, share: dict):
         share_status = strategy(last_price, share["ticker"])
     else:
         return None
-    if share_status:
-        print(share["ticker"], candle.time + datetime.timedelta(hours=3), last_price)
+    # if share_status:
+    #     print(share["ticker"], candle.time + datetime.timedelta(hours=3), last_price)
 
 
 async def orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
