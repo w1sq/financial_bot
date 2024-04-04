@@ -1,16 +1,16 @@
 import datetime
-from typing import Optional, List, Dict, Tuple
+from typing import List, Dict, Tuple
 
 
 import pandas
+import numpy
 from tinkoff.invest import AsyncClient, HistoricCandle, CandleInterval
 from tinkoff.invest.retrying.aio.client import AsyncRetryingClient
 from tinkoff.invest.retrying.settings import RetryClientSettings
 from tinkoff.invest.exceptions import AioRequestError
 from tinkoff.invest.async_services import AsyncServices
 
-# import tinkoff
-from tinkoff.invest.utils import quotation_to_decimal, now
+from tinkoff.invest.utils import quotation_to_decimal
 from tinkoff.invest import (
     OrderState,
     OrderExecutionReportStatus,
@@ -25,7 +25,6 @@ from markets.tinkoff.utils import (
     place_stop_orders,
     moneyvalue_to_float,
     get_account_id,
-    ensure_market_open,
     get_last_price,
 )
 
@@ -33,7 +32,7 @@ from markets.tinkoff.utils import (
 class StrategyConfig:
     bolinger_mult = 2
     bollinger_frame_count = 20
-    rsi_count_frame = 14
+    rsi_count_frame = 14  # 14 actually
     strategy_bollinger_range = 1.5
     rsi_treshold = 30
     take_profit = 0.4
@@ -50,7 +49,39 @@ def calculate_bollinger_bands(data: pandas.Series, window=20) -> Tuple[float, fl
     return sma.iloc[-1], std.iloc[-1]
 
 
-def calculate_rsi(data: pandas.Series, period=14) -> float:
+def rma(dataframe: pandas.DataFrame, length: int = 14):
+    alpha = 1.0 / length
+    series = dataframe[0]
+    for i in range(1, series.size):
+        if not pandas.isna(series[i - 1]):
+            series.iloc[i] = (series[i] * alpha) + (1 - alpha) * (series[i - 1])
+        else:
+            series.iloc[i] = series[i] / length
+    return series
+
+
+def calculate_rsi_web(
+    ohlc: pandas.DataFrame, period: int = StrategyConfig.rsi_count_frame
+):
+    delta = ohlc.diff()
+    delta = delta.fillna(0)
+    up = delta.copy()
+    up[up < 0] = 0
+    up1 = pandas.DataFrame(up)
+    up2 = pandas.Series(rma(up1, period))
+    down = delta.copy()
+    down[down > 0] = 0
+    down *= -1
+    down1 = pandas.DataFrame(down)
+    down2 = pandas.Series(rma(down1, period))
+
+    rsi = numpy.where(
+        up2 == 0, 0, numpy.where(down2 == 0, 100, 100 - (100 / (1 + (up2 / down2))))
+    )
+    return rsi[-1]
+
+
+def calculate_rsi(data: pandas.Series, period=StrategyConfig.rsi_count_frame) -> float:
     delta = data.diff()
     up = delta.clip(lower=0)
     down = -1 * delta.clip(upper=0)
@@ -65,7 +96,11 @@ def strategy(last_price: float, ticker: str) -> bool:
     local_data_bollinger = data_bollinger[ticker]
     local_data_rsi = data_rsi[ticker]
     avarege, sko = calculate_bollinger_bands(pandas.Series(local_data_bollinger))
+    if len(local_data_rsi) < StrategyConfig.rsi_count_frame:
+        return False
     rsi = calculate_rsi(pandas.Series(local_data_rsi))
+    if rsi < 30:
+        print("rsi", rsi)
     if (
         last_price
         < (
@@ -124,7 +159,7 @@ async def analise_share(share: dict, purchases: dict, client: AsyncServices):
         )
     ):
         quantity_lot = int(
-            min(3000, purchases["available"]) // (last_price * share["lot"])
+            min(10000, purchases["available"]) // (last_price * share["lot"])
         )
         if quantity_lot > 0:
             last_price -= last_price % share["min_price_increment"]
@@ -153,7 +188,7 @@ async def fill_data_nikita():
                     datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc),
                     datetime.time(6, 0),
                 ).replace(tzinfo=datetime.timezone.utc)
-                - datetime.timedelta(days=2),
+                - datetime.timedelta(days=5),
                 interval=CandleInterval.CANDLE_INTERVAL_1_MIN,
             ):
                 await analise_historic_candle(candle, share)
@@ -164,23 +199,26 @@ async def analise_historic_candle(candle: HistoricCandle, share: dict):
     local_data_rsi = data_rsi[share["ticker"]]
     last_price = float(quotation_to_decimal(candle.close))
     share_status = False
-    if candle.time.minute == 30:
+    if candle.time.minute == 00:
         if len(local_data_bollinger) < StrategyConfig.bollinger_frame_count:
             local_data_bollinger.append(last_price)
         else:
             local_data_bollinger.pop(0)
             local_data_bollinger.append(last_price)
             share_status = strategy(last_price, share["ticker"])
+            print(share["ticker"], candle.time + datetime.timedelta(hours=3))
         if len(local_data_rsi) < StrategyConfig.rsi_count_frame:
             local_data_rsi.append(last_price)
         else:
-            local_data_rsi.pop(0)
+            # local_data_rsi.pop(0)
             local_data_rsi.append(last_price)
             share_status = strategy(last_price, share["ticker"])
+            print(share["ticker"], candle.time + datetime.timedelta(hours=3))
     elif len(local_data_bollinger) > 0:
         local_data_bollinger[-1] = last_price
         local_data_rsi[-1] = last_price
         share_status = strategy(last_price, share["ticker"])
+        print(share["ticker"], candle.time + datetime.timedelta(hours=3))
     else:
         return None
     # if share_status:
@@ -367,3 +405,23 @@ async def market_review_nikita(tg_bot: TG_Bot, purchases: Dict[str, Dict]):
                 strategy="nikita",
                 volume=0,
             )
+
+
+import asyncio
+
+
+async def main():
+    await fill_data_nikita()
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        market_review_nikita,
+        "cron",
+        hour="10-23",
+        second="00",
+        args=[self.tg_bot, self.strategies_data["nikita"]],
+    )
+
+
+if __name__ == "__main__":
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())

@@ -1,5 +1,5 @@
 {
-    "nikita": { "available": 20000, "orders": {} },
+    "nikita": { "available": 40000, "orders": {} },
     "andrey": { "available": 30000, "orders": {} },
     "george": {}
 }
