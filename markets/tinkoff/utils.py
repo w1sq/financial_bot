@@ -63,6 +63,25 @@ async def get_account_id(client: AsyncClient):
     return accounts.accounts[0].id
 
 
+async def sell_market_order(
+    figi: str,
+    quantity: int,
+    client: AsyncClient,
+) -> PostOrderResponse:
+    account_id = await get_account_id(client)
+    order: PostOrderResponse = await client.orders.post_order(
+        instrument_id=figi,
+        account_id=account_id,
+        quantity=quantity,
+        direction=OrderDirection.ORDER_DIRECTION_SELL,
+        order_type=OrderType.ORDER_TYPE_MARKET,
+        order_id=str(datetime.datetime.utcnow().timestamp()),
+    )
+    if order.execution_report_status not in (1, 4):
+        print(figi, order)
+    return order
+
+
 async def buy_market_order(
     figi: str,
     quantity: int,
@@ -167,7 +186,7 @@ async def get_last_price(figi: str, client: AsyncServices) -> float:
 
 async def get_history(client: AsyncServices) -> List[Operation]:
     account_id = await get_account_id(client)
-    ten_min_ago = datetime.datetime.now(pytz.utc) - datetime.timedelta(minutes=2)
+    ten_min_ago = datetime.datetime.now(pytz.utc) - datetime.timedelta(minutes=10)
     try:
         history = await client.operations.get_operations(
             account_id=account_id,

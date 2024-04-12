@@ -13,6 +13,8 @@ from tinkoff.invest.utils import quotation_to_decimal
 from tinkoff.invest import (
     OrderState,
     OrderExecutionReportStatus,
+    OperationType,
+    OperationState,
 )
 
 
@@ -67,8 +69,8 @@ def strategy(last_price: float, ticker: str) -> bool:
     if len(local_data_rsi) < StrategyConfig.rsi_count_frame:
         return False
     rsi = calculate_rsi(pandas.Series(local_data_rsi))
-    if rsi < 30:
-        print("rsi", rsi)
+    # if rsi < 30:
+    #     print("rsi", rsi)
     if (
         last_price
         < (
@@ -148,7 +150,7 @@ async def analise_share(share: dict, purchases: dict, client: AsyncServices):
     return None
 
 
-async def fill_data_nikita():
+async def fill_data_nikita(purchases: dict):
     async with AsyncRetryingClient(
         Config.NIKITA_TOKEN, Config.RETRY_SETTINGS
     ) as client:
@@ -157,6 +159,13 @@ async def fill_data_nikita():
             data_bollinger[share["ticker"]] = []
             data_rsi[share["ticker"]] = []
         for share in shares:
+            if share["ticker"] not in purchases["orders"].keys():
+                purchases["orders"][share["ticker"]] = {
+                    "min_price_increment": share["min_price_increment"],
+                    "lot": share["lot"],
+                    "figi": share["figi"],
+                    "averaging": False,
+                }
             async for candle in client.get_all_candles(
                 figi=share["figi"],
                 from_=datetime.datetime.combine(
@@ -292,73 +301,68 @@ async def stop_orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
     async with AsyncRetryingClient(
         Config.NIKITA_TOKEN, Config.RETRY_SETTINGS
     ) as client:
-        active_stop_orders = await client.stop_orders.get_stop_orders(
-            account_id=str(await get_account_id(client))
-        )
-        active_stop_orders_ids = [
-            stop_order.stop_order_id for stop_order in active_stop_orders.stop_orders
-        ]
+        last_trades = await get_history(client)
+        if not last_trades:
+            return None
+        # active_stop_orders = await client.stop_orders.get_stop_orders(
+        #     account_id=str(await get_account_id(client))
+        # )
+        # active_stop_orders_ids = [
+        #     stop_order.stop_order_id for stop_order in active_stop_orders.stop_orders
+        # ]
         for ticker in purchases["orders"].keys():
-            order_id = purchases["orders"][ticker].get("order_id", None)
+            order_id = purchases["orders"][ticker].get("order_id")
             if not order_id or "|" not in order_id:
                 continue
             take_profit_order_id, stop_loss_order_id = order_id.split("|")
-            if (
-                take_profit_order_id not in active_stop_orders_ids
-                or stop_loss_order_id not in active_stop_orders_ids
-            ):
-                lot = purchases["orders"][ticker].get("lot", 1)
-                (purchase_text, take_profit_price, stop_loss_price, lots_traded) = (
-                    purchases["orders"][ticker]["order_data"]
-                )
+            figi = purchases["orders"][ticker].get("figi")
+            for last_trade in last_trades:
                 if (
-                    take_profit_order_id not in active_stop_orders_ids
-                    and stop_loss_order_id in active_stop_orders_ids
+                    last_trade.figi == figi
+                    and last_trade.operation_type == OperationType.OPERATION_TYPE_SELL
+                    and last_trade.state == OperationState.OPERATION_STATE_EXECUTED
                 ):
-                    try:
-                        await client.stop_orders.cancel_stop_order(
-                            account_id=await get_account_id(client),
-                            stop_order_id=stop_loss_order_id,
-                        )
-                    except AioRequestError as e:
-                        print(e)
-                    price_sell = take_profit_price
-                    price_buy = take_profit_price / (
-                        1 + StrategyConfig.take_profit / 100
+                    (purchase_text, take_profit_price, stop_loss_price, lots_traded) = (
+                        purchases["orders"][ticker]["order_data"]
                     )
-                    profit = lots_traded * (price_sell - price_buy) * lot
-                elif (
-                    stop_loss_order_id not in active_stop_orders_ids
-                    and take_profit_order_id in active_stop_orders_ids
-                ):
-                    try:
-                        await client.stop_orders.cancel_stop_order(
-                            account_id=await get_account_id(client),
-                            stop_order_id=take_profit_order_id,
+                    sell_price = moneyvalue_to_float(last_trade.price)
+                    if abs(sell_price - take_profit_price) < abs(
+                        sell_price - stop_loss_price
+                    ):
+                        try:
+                            await client.stop_orders.cancel_stop_order(
+                                account_id=await get_account_id(client),
+                                stop_order_id=stop_loss_order_id,
+                            )
+                        except AioRequestError as e:
+                            pass
+                        price_buy = take_profit_price / (
+                            1 + StrategyConfig.take_profit / 100
                         )
-                    except AioRequestError as e:
-                        print(e)
-                    price_sell = stop_loss_price
-                    price_buy = stop_loss_price / (1 - StrategyConfig.stop_loss / 100)
-                    profit = -lots_traded * (price_sell - price_buy) * lot
-                else:
-                    price_sell = take_profit_price
-                    purchases["orders"][ticker][
-                        "last_sell"
-                    ] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-                    purchases["available"] += lots_traded * price_sell * lot
-                    continue
-                purchases["available"] += lots_traded * price_sell * lot
-                messages_to_send.append(
-                    f"СТРАТЕГИЯ НИКИТЫ ПРОДАЖА\n\n{purchase_text}\n\nПродажа {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} по цене {price_sell}\n\nПрибыль: {round(profit, 2)}"
-                )
-                purchases["orders"][ticker] = {
-                    "last_sell": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "min_price_increment": purchases["orders"][ticker][
-                        "min_price_increment"
-                    ],
-                    "averaging": False,
-                }
+                    else:
+                        try:
+                            await client.stop_orders.cancel_stop_order(
+                                account_id=await get_account_id(client),
+                                stop_order_id=take_profit_order_id,
+                            )
+                        except AioRequestError as e:
+                            pass
+                        price_buy = stop_loss_price / (
+                            1 - StrategyConfig.stop_loss / 100
+                        )
+                    profit = lots_traded * (sell_price - price_buy)
+                    purchases["available"] += moneyvalue_to_float(last_trade.payment)
+                    messages_to_send.append(
+                        f"СТРАТЕГИЯ НИКИТЫ ПРОДАЖА\n\n{purchase_text}\n\nПродажа {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} по цене {sell_price}\n\nПрибыль: {round(profit, 2)}"
+                    )
+                    purchases["orders"][ticker] = {
+                        "last_sell": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "min_price_increment": purchases["orders"][ticker][
+                            "min_price_increment"
+                        ],
+                        "figi": purchases["orders"][ticker]["figi"],
+                        "averaging": False,
+                    }
     for message in messages_to_send:
         await tg_bot.send_signal(
             message=message,
@@ -374,12 +378,6 @@ async def market_review_nikita(tg_bot: TG_Bot, purchases: Dict[str, Dict]):
         shares = await get_shares(client)
         messages_to_send = []
         for share in shares:
-            # await ensure_market_open(share["figi"], client)
-            if share["ticker"] not in purchases["orders"].keys():
-                purchases["orders"][share["ticker"]] = {
-                    "min_price_increment": share["min_price_increment"],
-                    "averaging": False,
-                }
             message = await analise_share(share, purchases, client)
             if message is not None:
                 messages_to_send.append(message)

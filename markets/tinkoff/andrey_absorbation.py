@@ -471,7 +471,7 @@ async def stop_orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
                         price_buy = stop_loss_price / (
                             1 - StrategyConfig.stop_loss / 100
                         )
-                        profit = lots_traded * (sell_price - price_buy)
+                    profit = lots_traded * (sell_price - price_buy)
                     purchases["available"] += moneyvalue_to_float(last_trade.payment)
                     messages_to_send.append(
                         f"СТРАТЕГИЯ АНДРЕЯ ПРОДАЖА\n\n{purchase_text}\n\nПродажа ЛОНГ {last_trade.date.strftime('%Y-%m-%d %H:%M')}\nКоличество: {last_trade.quantity}\nЦена выхода: {sell_price}\nЦена входа: {price_buy}\n\nПрибыль: {round(profit, 2)}"

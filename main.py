@@ -134,8 +134,8 @@ class Launcher:
         )
         # scheduler.start()
 
-        await fill_data_nikita()
-        await fill_market_data_andrey(self.strategies_data["andrey"])
+        # await fill_data_nikita(self.strategies_data["nikita"])
+        # await fill_market_data_andrey(self.strategies_data["andrey"])
         tasks = [
             market_review_andrey(self.tg_bot, self.strategies_data["andrey"]),
             # market_review_candles(self.tg_bot),
