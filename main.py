@@ -20,7 +20,6 @@ from markets.tinkoff.andrey_absorbation import (
     orders_check_andrey,
     stop_orders_check_andrey,
 )
-from markets.tinkoff.george import market_review_george
 from markets.tinkoff.andrey_candles import market_review_candles
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -133,12 +132,12 @@ class Launcher:
             second="30",
             args=[self.strategies_data],
         )
-        scheduler.start()
+        # scheduler.start()
 
         await fill_data_nikita()
         await fill_market_data_andrey(self.strategies_data["andrey"])
         tasks = [
-            # market_review_andrey(self.tg_bot, self.strategies_data["andrey"]),
+            market_review_andrey(self.tg_bot, self.strategies_data["andrey"]),
             # market_review_candles(self.tg_bot),
             self.main(),
         ]

@@ -4,7 +4,13 @@ from typing import Optional, List, Dict, Tuple
 import asyncio
 from tinkoff.invest.utils import quotation_to_decimal, now
 from tinkoff.invest import AsyncClient, CandleInterval, HistoricCandle
-from tinkoff.invest import OrderState, OrderExecutionReportStatus, OperationType
+from tinkoff.invest.retrying.aio.client import AsyncRetryingClient
+from tinkoff.invest import (
+    OrderState,
+    OrderExecutionReportStatus,
+    OperationType,
+    OperationState,
+)
 from tinkoff.invest.exceptions import AioRequestError
 
 
@@ -17,7 +23,7 @@ from markets.tinkoff.utils import (
     place_stop_orders,
     moneyvalue_to_float,
     get_account_id,
-    # get_history,
+    get_history,
 )
 
 
@@ -117,11 +123,13 @@ async def analisys(
             > 100 * 10**6
         ):
             order_candle.close -= order_candle.close % share["min_price_increment"]
-            async with AsyncClient(Config.ANDREY_TOKEN) as client:
+            async with AsyncRetryingClient(
+                Config.ANDREY_TOKEN, Config.RETRY_SETTINGS
+            ) as client:
                 buy_trade = await buy_market_order(share["figi"], quantity_lot, client)
             purchases["orders"][share["ticker"]]["order_id"] = buy_trade.order_id
             purchases["available"] -= order_candle.close * quantity_lot * share["lot"]
-            return f"СТРАТЕГИЯ АНДРЕЯ ЗАЯВКА {order_candle.type}\n\nЗаявка на {share['name']}\n{share['ticker']} {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} по цене {order_candle.close}\nКол-во: {quantity_lot * share['lot']}"
+            return f"СТРАТЕГИЯ АНДРЕЯ ЗАЯВКА {order_candle.type} ЛОНГ\n\nЗаявка на {share['name']}\n{share['ticker']} {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} по цене {order_candle.close}\nКол-во : {quantity_lot * share['lot']}"
 
     async def create_short_order(order_candle: CustomCandle):
         if (
@@ -134,26 +142,28 @@ async def analisys(
                 share["ticker"],
                 order_candle.type,
             )
-        # quantity_lot = int(
-        #     min(StrategyConfig.money_in_order, purchases["available"])
-        #     // (order_candle.close * share["lot"])
-        # )
-        # if (
-        #     quantity_lot > 0
-        #     and buy
-        #     and (
-        #         prev_custom_candle.volume
-        #         * share["lot"]
-        #         * (prev_custom_candle.low + prev_custom_candle.length / 2)
-        #     )
-        #     > 100 * 10**6
-        # ):
-        #     order_candle.close -= order_candle.close % share["min_price_increment"]
-        #     async with AsyncClient(Config.ANDREY_TOKEN) as client:
-        #         buy_trade = await buy_market_order(share["figi"], quantity_lot, client)
-        #     purchases["orders"][share["ticker"]]["order_id"] = buy_trade.order_id
-        #     purchases["available"] -= order_candle.close * quantity_lot * share["lot"]
-        #     return f"СТРАТЕГИЯ АНДРЕЯ ЗАЯВКА {order_candle.type}\n\nЗаявка на {share['name']}\n{share['ticker']} {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} по цене {order_candle.close}\nКол-во: {quantity_lot * share['lot']}"
+            # quantity_lot = int(
+            #     min(StrategyConfig.money_in_order, purchases["available"])
+            #     // (order_candle.close * share["lot"])
+            # )
+            # if (
+            #     quantity_lot > 0
+            #     and buy
+            #     and (
+            #         prev_custom_candle.volume
+            #         * share["lot"]
+            #         * (prev_custom_candle.low + prev_custom_candle.length / 2)
+            #     )
+            #     > 100 * 10**6
+            # ):
+            #     order_candle.close -= order_candle.close % share["min_price_increment"]
+            # async with AsyncRetryingClient(
+            #     Config.ANDREY_TOKEN, Config.RETRY_SETTINGS
+            # ) as client:
+            #     buy_trade = await buy_market_order(share["figi"], quantity_lot, client)
+            # purchases["orders"][share["ticker"]]["order_id"] = buy_trade.order_id
+            # purchases["available"] -= order_candle.close * quantity_lot * share["lot"]
+            # return f"СТРАТЕГИЯ АНДРЕЯ ЗАЯВКА {order_candle.type}\n\nЗаявка на {share['name']}\n{share['ticker']} {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} по цене {order_candle.close}\nКол-во: {quantity_lot * share['lot']}"
 
     if (
         (prev_custom_candle.color == "red")
@@ -299,7 +309,9 @@ def falling_indicator(input_list: List[CustomCandle]) -> bool:
 
 
 async def fill_market_data_andrey(purchases: dict):
-    async with AsyncClient(Config.ANDREY_TOKEN) as client:
+    async with AsyncRetryingClient(
+        Config.ANDREY_TOKEN, Config.RETRY_SETTINGS
+    ) as client:
         shares = await get_shares(client)
         now_time = datetime.datetime.combine(
             datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc),
@@ -310,9 +322,10 @@ async def fill_market_data_andrey(purchases: dict):
                 purchases["orders"][share["ticker"]] = {
                     "min_price_increment": share["min_price_increment"],
                     "lots": share["lot"],
+                    "figi": share["figi"],
                 }
-            elif "lots" not in purchases["orders"][share["ticker"]].keys():
-                purchases["orders"][share["ticker"]]["lots"] = share["lot"]
+            elif "figi" not in purchases["orders"][share["ticker"]].keys():
+                purchases["orders"][share["ticker"]]["figi"] = share["figi"]
         for share in shares:
             async for candle in client.get_all_candles(
                 figi=share["figi"],
@@ -325,7 +338,9 @@ async def fill_market_data_andrey(purchases: dict):
 
 async def orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
     messages_to_send = []
-    async with AsyncClient(Config.ANDREY_TOKEN) as client:
+    async with AsyncRetryingClient(
+        Config.ANDREY_TOKEN, Config.RETRY_SETTINGS
+    ) as client:
         for ticker in purchases["orders"].keys():
             order_id = purchases["orders"][ticker].get("order_id", None)
             if not order_id or "|" in order_id:
@@ -338,10 +353,6 @@ async def orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
                 == OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL
             ):
                 if order.lots_executed > 0:
-                    purchase_text = f"Покупка {ticker} {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')} по цене {moneyvalue_to_float(order.average_position_price)} с коммисией {moneyvalue_to_float(order.executed_commission)}\nКол-во: {order.lots_executed*purchases['orders'][ticker]['lots']}"
-                    messages_to_send.append(
-                        "СТРАТЕГИЯ АНДРЕЯ ПОКУПКА\n\n" + purchase_text
-                    )
                     take_profit_price = moneyvalue_to_float(
                         order.average_position_price
                     ) * (1 + StrategyConfig.take_profit / 100)
@@ -355,6 +366,10 @@ async def orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
                     stop_loss_price -= (
                         stop_loss_price
                         % purchases["orders"][ticker]["min_price_increment"]
+                    )
+                    purchase_text = f"Покупка {ticker} ЛОНГ {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')} по цене {moneyvalue_to_float(order.average_position_price)} с коммисией {moneyvalue_to_float(order.executed_commission)}\nОбщий объем сделки: {moneyvalue_to_float(order.total_order_amount)}\nКол-во бумаг: {order.lots_executed*purchases['orders'][ticker]['lots']}\nКол-во лотов: {order.lots_executed}\nСтоп-лосс: {stop_loss_price}\nТейк-профит: {take_profit_price}"
+                    messages_to_send.append(
+                        "СТРАТЕГИЯ АНДРЕЯ ПОКУПКА\n\n" + purchase_text
                     )
                     take_profit_response, stop_loss_response = await place_stop_orders(
                         order.figi,
@@ -404,76 +419,64 @@ async def orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
 
 async def stop_orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
     messages_to_send = []
-    async with AsyncClient(Config.ANDREY_TOKEN) as client:
-        active_stop_orders = await client.stop_orders.get_stop_orders(
-            account_id=str(await get_account_id(client))
-        )
-        active_stop_orders_ids = [
-            stop_order.stop_order_id for stop_order in active_stop_orders.stop_orders
-        ]
+    async with AsyncRetryingClient(
+        Config.ANDREY_TOKEN, Config.RETRY_SETTINGS
+    ) as client:
+        last_trades = await get_history(client)
+        if not last_trades:
+            return None
+        # active_stop_orders = await client.stop_orders.get_stop_orders(
+        #     account_id=str(await get_account_id(client))
+        # )
+        # active_stop_orders_ids = [
+        #     stop_order.stop_order_id for stop_order in active_stop_orders.stop_orders
+        # ]
         for ticker in purchases["orders"].keys():
-            order_id = purchases["orders"][ticker].get("order_id", None)
+            order_id = purchases["orders"][ticker].get("order_id")
+            figi = purchases["orders"][ticker].get("figi")
             if not order_id or "|" not in order_id:
                 continue
             take_profit_order_id, stop_loss_order_id = order_id.split("|")
-            if (
-                take_profit_order_id not in active_stop_orders_ids
-                or stop_loss_order_id not in active_stop_orders_ids
-            ):
-                (purchase_text, take_profit_price, stop_loss_price, lots_traded) = (
-                    purchases["orders"][ticker]["order_data"]
-                )
+            for last_trade in last_trades:
                 if (
-                    take_profit_order_id not in active_stop_orders_ids
-                    and stop_loss_order_id in active_stop_orders_ids
+                    last_trade.figi == figi
+                    and last_trade.operation_type == OperationType.OPERATION_TYPE_SELL
+                    and last_trade.state == OperationState.OPERATION_STATE_EXECUTED
                 ):
-                    try:
-                        await client.stop_orders.cancel_stop_order(
-                            account_id=await get_account_id(client),
-                            stop_order_id=stop_loss_order_id,
-                        )
-                    except AioRequestError as e:
-                        print(e)
-                    price_sell = take_profit_price
-                    price_buy = take_profit_price / (
-                        1 + StrategyConfig.take_profit / 100
+                    (purchase_text, take_profit_price, stop_loss_price, lots_traded) = (
+                        purchases["orders"][ticker]["order_data"]
                     )
-                    profit = lots_traded * (price_sell - price_buy)
-                elif (
-                    stop_loss_order_id not in active_stop_orders_ids
-                    and take_profit_order_id in active_stop_orders_ids
-                ):
-                    try:
-                        await client.stop_orders.cancel_stop_order(
-                            account_id=await get_account_id(client),
-                            stop_order_id=take_profit_order_id,
+                    sell_price = moneyvalue_to_float(last_trade.price)
+                    if abs(sell_price - take_profit_price) < abs(
+                        sell_price - stop_loss_price
+                    ):
+                        try:
+                            await client.stop_orders.cancel_stop_order(
+                                account_id=await get_account_id(client),
+                                stop_order_id=stop_loss_order_id,
+                            )
+                        except AioRequestError as e:
+                            print(e)
+                        price_buy = take_profit_price / (
+                            1 + StrategyConfig.take_profit / 100
                         )
-                    except AioRequestError as e:
-                        print(e)
-                    price_sell = stop_loss_price
-                    price_buy = stop_loss_price / (1 - StrategyConfig.stop_loss / 100)
-                    profit = -lots_traded * (price_sell - price_buy)
-                else:
-                    price_sell = take_profit_price
-                    price_buy = take_profit_price / (
-                        1 + StrategyConfig.take_profit / 100
+                    else:
+                        try:
+                            await client.stop_orders.cancel_stop_order(
+                                account_id=await get_account_id(client),
+                                stop_order_id=take_profit_order_id,
+                            )
+                        except AioRequestError as e:
+                            print(e)
+                        price_buy = stop_loss_price / (
+                            1 - StrategyConfig.stop_loss / 100
+                        )
+                        profit = lots_traded * (sell_price - price_buy)
+                    purchases["available"] += moneyvalue_to_float(last_trade.payment)
+                    messages_to_send.append(
+                        f"СТРАТЕГИЯ АНДРЕЯ ПРОДАЖА\n\n{purchase_text}\n\nПродажа ЛОНГ {last_trade.date.strftime('%Y-%m-%d %H:%M')}\nКоличество: {last_trade.quantity}\nЦена выхода: {sell_price}\nЦена входа: {price_buy}\n\nПрибыль: {round(profit, 2)}"
                     )
-                    profit = -lots_traded * (price_sell - price_buy)
-                    # history = await get_history(client)
-                    # for trade in history:
-                    #     if trade.figi == purchases["orders"][ticker][
-                    #         "figi"
-                    #     ] and trade.operation_type in (
-                    #         OperationType.OPERATION_TYPE_SELL,
-                    #         OperationType.OPERATION_TYPE_BUY,
-                    #     ):
-                    #         price_buy = moneyvalue_to_float(trade.payment)
-                    #         break
-                purchases["available"] += lots_traded * price_sell
-                messages_to_send.append(
-                    f"СТРАТЕГИЯ АНДРЕЯ ПРОДАЖА\n\n{purchase_text}\n\nПродажа {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} по цене {price_sell}\n\nПрибыль: {round(profit, 2)}"
-                )
-                purchases["orders"][ticker]["order_id"] = None
+                    purchases["orders"][ticker]["order_id"] = None
     for message in messages_to_send:
         await tg_bot.send_signal(
             message=message,
@@ -483,7 +486,9 @@ async def stop_orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
 
 
 async def market_review_andrey(tg_bot: TG_Bot, purchases: Dict[str, Dict]):
-    async with AsyncClient(Config.ANDREY_TOKEN) as client:
+    async with AsyncRetryingClient(
+        Config.ANDREY_TOKEN, Config.RETRY_SETTINGS
+    ) as client:
         shares = await get_shares(client)
         messages_to_send = []
         for share in shares:
@@ -492,7 +497,7 @@ async def market_review_andrey(tg_bot: TG_Bot, purchases: Dict[str, Dict]):
                 from_=now() - datetime.timedelta(days=1),
                 interval=CandleInterval.CANDLE_INTERVAL_DAY,
             ):
-                message = await analisys(share, candle, purchases, buy=False)
+                message = await analisys(share, candle, purchases)
                 if message is not None:
                     messages_to_send.append(message)
         for message in messages_to_send:

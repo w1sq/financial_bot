@@ -1,7 +1,10 @@
+import pytz
 import datetime
 import asyncio
 from typing import Optional, List, Dict, Tuple
 
+
+import tinkoff.invest.exceptions
 from tinkoff.invest import (
     AsyncClient,
     OrderType,
@@ -52,38 +55,6 @@ async def get_shares(client: AsyncClient, tickers: List[str] = None) -> List[Dic
                         "kshort": float(quotation_to_decimal(item.kshort)),
                     }
                 )
-    return shares
-
-
-async def get_futures(client: AsyncClient, tickers: List[str] = None) -> List[Dict]:
-    """Get shares from Tinkoff API by tickers or all of them"""
-    instruments: InstrumentsService = client.instruments
-    shares = []
-    for method in ["futures"]:
-        for item in (await getattr(instruments, method)()).instruments:
-            shares.append(
-                {
-                    "name": item.name,
-                    "ticker": item.ticker,
-                    "class_code": item.class_code,
-                    "figi": item.figi,
-                    "uid": item.uid,
-                    "type": method,
-                    "min_price_increment": float(
-                        quotation_to_decimal(item.min_price_increment)
-                    ),
-                    "scale": 9 - len(str(item.min_price_increment.nano)) + 1,
-                    "lot": item.lot,
-                    "api_trade_available_flag": item.api_trade_available_flag,
-                    "currency": item.currency,
-                    "exchange": item.exchange,
-                    "buy_available_flag": item.buy_available_flag,
-                    "sell_available_flag": item.sell_available_flag,
-                    "short_enabled_flag": item.short_enabled_flag,
-                    "klong": float(quotation_to_decimal(item.klong)),
-                    "kshort": float(quotation_to_decimal(item.kshort)),
-                }
-            )
     return shares
 
 
@@ -194,14 +165,15 @@ async def get_last_price(figi: str, client: AsyncServices) -> float:
     )
 
 
-# async def get_history(client: AsyncClient) -> List[Operation]:
-#     account_id = await get_account_id(client)
-#     today = datetime.datetime.today()
-#     today_at_10_am = datetime.datetime.combine(today, time(10, 0))
-#     return (
-#         await client.operations.get_operations(
-#             account_id=account_id,
-#             from_=datetime.datetime,
-#             state=OperationState.OPERATION_STATE_EXECUTED,
-#         )
-#     ).operations
+async def get_history(client: AsyncServices) -> List[Operation]:
+    account_id = await get_account_id(client)
+    ten_min_ago = datetime.datetime.now(pytz.utc) - datetime.timedelta(minutes=2)
+    try:
+        history = await client.operations.get_operations(
+            account_id=account_id,
+            from_=ten_min_ago,
+            state=OperationState.OPERATION_STATE_EXECUTED,
+        )
+        return history.operations
+    except tinkoff.invest.exceptions.AioRequestError:
+        return []
