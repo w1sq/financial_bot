@@ -278,6 +278,9 @@ async def fill_market_data_andrey(purchases: dict):
     async with AsyncRetryingClient(
         Config.ANDREY_TOKEN, Config.RETRY_SETTINGS
     ) as client:
+        ago = 2
+        if datetime.datetime.now().weekday() == 0:
+            ago = 4
         shares = await get_shares(client)
         now_time = datetime.datetime.combine(
             datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc),
@@ -296,7 +299,7 @@ async def fill_market_data_andrey(purchases: dict):
             async for candle in client.get_all_candles(
                 figi=share["figi"],
                 from_=now_time - datetime.timedelta(days=15),
-                # to=now_time - datetime.timedelta(days=2),
+                to=now_time - datetime.timedelta(days=ago),
                 interval=CandleInterval.CANDLE_INTERVAL_DAY,
             ):
                 await analisys(share, candle, purchases, buy=False)
@@ -349,9 +352,10 @@ async def orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
                         stop_loss_price
                         % purchases["orders"][ticker]["min_price_increment"]
                     )
-                    purchase_text = f"Покупка {ticker} {'ЛОНГ' if 'long' in order_type else 'ШОРТ'} {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')} по цене {moneyvalue_to_float(order.average_position_price)} с коммисией {moneyvalue_to_float(order.executed_commission)}\nОбщий объем сделки: {moneyvalue_to_float(order.total_order_amount)}\nКол-во бумаг: {order.lots_executed*purchases['orders'][ticker]['lots']}\nКол-во лотов: {order.lots_executed}\nСтоп-лосс: {stop_loss_price}\nТейк-профит: {take_profit_price}"
+                    purchase_text = f"{'Покупка ' + ticker + ' ЛОНГ' if 'long' in order_type else 'Продажа ' + ticker + 'ШОРТ'} {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')} по цене {moneyvalue_to_float(order.average_position_price)} с коммисией {moneyvalue_to_float(order.executed_commission)}\nОбщий объем сделки: {moneyvalue_to_float(order.total_order_amount)}\nКол-во бумаг: {order.lots_executed*purchases['orders'][ticker]['lots']}\nКол-во лотов: {order.lots_executed}\nСтоп-лосс: {stop_loss_price}\nТейк-профит: {take_profit_price}"
                     messages_to_send.append(
-                        "СТРАТЕГИЯ АНДРЕЯ ПОКУПКА\n\n" + purchase_text
+                        f"СТРАТЕГИЯ АНДРЕЯ {'ПОКУПКА' if 'long' in order_type else 'ПРОДАЖА'}\n\n"
+                        + purchase_text
                     )
                     if "long" in order_type:
                         take_profit_response, stop_loss_response = (
@@ -490,8 +494,9 @@ async def stop_orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
                     else:
                         profit = lots_traded * (price_buy - sell_price)
                     purchases["available"] += moneyvalue_to_float(last_trade.payment)
+                    purchase_text = "\n\n" + purchase_text + "\n\n"
                     messages_to_send.append(
-                        f"СТРАТЕГИЯ АНДРЕЯ ПРОДАЖА\n\n{purchase_text}\n\nПродажа {'ЛОНГ' if 'long' in order_type else 'ШОРТ'} {last_trade.date.strftime('%Y-%m-%d %H:%M')}\nКоличество: {last_trade.quantity}\nЦена выхода: {sell_price}\nЦена входа: {price_buy}\n\nПрибыль: {round(profit, 2)}"
+                        f"СТРАТЕГИЯ АНДРЕЯ {'ПРОДАЖА' + purchase_text + 'ЛОНГ' if 'long' in order_type else 'ПОКУПКА' + purchase_text + 'ШОРТ'} {last_trade.date.strftime('%Y-%m-%d %H:%M')}\nКоличество: {last_trade.quantity}\nЦена выхода: {sell_price}\nЦена входа: {price_buy}\n\nПрибыль: {round(profit, 2)}"
                     )
                     purchases["orders"][ticker]["order_id"] = None
     for message in messages_to_send:
@@ -503,15 +508,16 @@ async def stop_orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
 
 
 async def market_review_andrey(tg_bot: TG_Bot, purchases: Dict[str, Dict]):
-    async with AsyncRetryingClient(
-        Config.ANDREY_TOKEN, Config.RETRY_SETTINGS
-    ) as client:
+    async with AsyncClient(Config.ANDREY_TOKEN) as client:
         shares = await get_shares(client)
         messages_to_send = []
+        ago = 1
+        if datetime.datetime.now().weekday() == 0:
+            ago = 3
         for share in shares:
             async for candle in client.get_all_candles(
                 figi=share["figi"],
-                from_=now() - datetime.timedelta(days=1),
+                from_=now() - datetime.timedelta(days=ago),
                 interval=CandleInterval.CANDLE_INTERVAL_DAY,
             ):
                 message = await analisys(share, candle, purchases)
