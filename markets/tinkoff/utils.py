@@ -220,7 +220,7 @@ async def get_last_price(figi: str, client: AsyncServices) -> float:
 
 async def get_history(client: AsyncServices) -> List[Operation]:
     account_id = await get_account_id(client)
-    ten_min_ago = datetime.datetime.now(pytz.utc) - datetime.timedelta(minutes=10)
+    ten_min_ago = datetime.datetime.now(pytz.utc) - datetime.timedelta(days=1)
     try:
         history = await client.operations.get_operations(
             account_id=account_id,

@@ -146,7 +146,7 @@ async def analise_share(share: dict, purchases: dict, client: AsyncServices):
             purchases["orders"][share["ticker"]]["order_id"] = buy_trade.order_id
             purchases["orders"][share["ticker"]]["lot"] = share["lot"]
             purchases["available"] -= last_price * quantity_lot * share["lot"]
-            return f"СТРАТЕГИЯ НИКИТЫ ЗАЯВКА\n\nЗаявка на {share['ticker']} на сумму {moneyvalue_to_float(buy_trade.total_order_amount)}\n\n{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} по цене {last_price}\nКол-во: {quantity_lot * share['lot']}"
+            return f"СТРАТЕГИЯ НИКИТЫ ЗАЯВКА\n\nЗаявка на {share['ticker']} на сумму {last_price * quantity_lot * share['lot']}\n\n{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} по цене {last_price}\nКол-во: {quantity_lot * share['lot']}"
     return None
 
 
@@ -336,7 +336,7 @@ async def stop_orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
                                 account_id=await get_account_id(client),
                                 stop_order_id=stop_loss_order_id,
                             )
-                        except AioRequestError as e:
+                        except Exception as e:
                             pass
                         price_buy = take_profit_price / (
                             1 + StrategyConfig.take_profit / 100
@@ -347,7 +347,7 @@ async def stop_orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
                                 account_id=await get_account_id(client),
                                 stop_order_id=take_profit_order_id,
                             )
-                        except AioRequestError as e:
+                        except Exception as e:
                             pass
                         price_buy = stop_loss_price / (
                             1 - StrategyConfig.stop_loss / 100
@@ -355,10 +355,12 @@ async def stop_orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
                     profit = lots_traded * (sell_price - price_buy)
                     purchases["available"] += moneyvalue_to_float(last_trade.payment)
                     messages_to_send.append(
-                        f"СТРАТЕГИЯ НИКИТЫ ПРОДАЖА\n\n{purchase_text}\n\nПродажа {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} по цене {sell_price}\n\nПрибыль: {round(profit, 2)}"
+                        f"СТРАТЕГИЯ НИКИТЫ ПРОДАЖА\n\n{purchase_text}\n\nПродажа {(last_trade.date + datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M')} по цене {sell_price}\n\nПрибыль: {round(profit, 2)}"
                     )
                     purchases["orders"][ticker] = {
-                        "last_sell": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "last_sell": (
+                            last_trade.date + datetime.timedelta(hours=3)
+                        ).strftime("%Y-%m-%d %H:%M"),
                         "min_price_increment": purchases["orders"][ticker][
                             "min_price_increment"
                         ],

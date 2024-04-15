@@ -352,7 +352,7 @@ async def orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
                         stop_loss_price
                         % purchases["orders"][ticker]["min_price_increment"]
                     )
-                    purchase_text = f"{'Покупка ' + ticker + ' ЛОНГ' if 'long' in order_type else 'Продажа ' + ticker + 'ШОРТ'} {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')} по цене {moneyvalue_to_float(order.average_position_price)} с коммисией {moneyvalue_to_float(order.executed_commission)}\nОбщий объем сделки: {moneyvalue_to_float(order.total_order_amount)}\nКол-во бумаг: {order.lots_executed*purchases['orders'][ticker]['lots']}\nКол-во лотов: {order.lots_executed}\nСтоп-лосс: {stop_loss_price}\nТейк-профит: {take_profit_price}"
+                    purchase_text = f"{'Покупка ' + ticker + ' ЛОНГ' if 'long' in order_type else 'Продажа ' + ticker + ' ШОРТ'} {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')} по цене {moneyvalue_to_float(order.average_position_price)} с коммисией {moneyvalue_to_float(order.executed_commission)}\nОбщий объем сделки: {moneyvalue_to_float(order.total_order_amount)}\nКол-во бумаг: {'-' if 'short' in order_type else ''}{order.lots_executed*purchases['orders'][ticker]['lots']}\nКол-во лотов: {order.lots_executed}\nСтоп-лосс: {stop_loss_price}\nТейк-профит: {take_profit_price}"
                     messages_to_send.append(
                         f"СТРАТЕГИЯ АНДРЕЯ {'ПОКУПКА' if 'long' in order_type else 'ПРОДАЖА'}\n\n"
                         + purchase_text
@@ -437,10 +437,13 @@ async def stop_orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
             if not order_id or "|" not in order_id:
                 continue
             take_profit_order_id, stop_loss_order_id = order_id.split("|")
+            direction = OperationType.OPERATION_TYPE_SELL
+            if "short" in order_type:
+                direction = OperationType.OPERATION_TYPE_BUY
             for last_trade in last_trades:
                 if (
                     last_trade.figi == figi
-                    and last_trade.operation_type == OperationType.OPERATION_TYPE_SELL
+                    and last_trade.operation_type == direction
                     and last_trade.state == OperationState.OPERATION_STATE_EXECUTED
                 ):
                     (purchase_text, take_profit_price, stop_loss_price, lots_traded) = (
@@ -450,13 +453,13 @@ async def stop_orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
                     if abs(sell_price - take_profit_price) < abs(
                         sell_price - stop_loss_price
                     ):
-                        try:
-                            await client.stop_orders.cancel_stop_order(
-                                account_id=await get_account_id(client),
-                                stop_order_id=stop_loss_order_id,
-                            )
-                        except AioRequestError as e:
-                            print(e)
+                        # try:
+                        #     await client.stop_orders.cancel_stop_order(
+                        #         account_id=await get_account_id(client),
+                        #         stop_order_id=stop_loss_order_id,
+                        #     )
+                        # except AioRequestError as e:
+                        #     print(e)
                         if order_type == "oneday long":
                             price_buy = take_profit_price / (
                                 1 + StrategyConfig.one_day_take_profit / 100
@@ -470,13 +473,13 @@ async def stop_orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
                                 1 - StrategyConfig.two_day_take_profit / 100
                             )
                     else:
-                        try:
-                            await client.stop_orders.cancel_stop_order(
-                                account_id=await get_account_id(client),
-                                stop_order_id=take_profit_order_id,
-                            )
-                        except AioRequestError as e:
-                            print(e)
+                        # try:
+                        #     await client.stop_orders.cancel_stop_order(
+                        #         account_id=await get_account_id(client),
+                        #         stop_order_id=take_profit_order_id,
+                        #     )
+                        # except AioRequestError as e:
+                        #     print(e)
                         if order_type == "oneday long":
                             price_buy = take_profit_price / (
                                 1 - StrategyConfig.one_day_stop_loss / 100
@@ -496,7 +499,7 @@ async def stop_orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
                     purchases["available"] += moneyvalue_to_float(last_trade.payment)
                     purchase_text = "\n\n" + purchase_text + "\n\n"
                     messages_to_send.append(
-                        f"СТРАТЕГИЯ АНДРЕЯ {'ПРОДАЖА' + purchase_text + 'ЛОНГ' if 'long' in order_type else 'ПОКУПКА' + purchase_text + 'ШОРТ'} {last_trade.date.strftime('%Y-%m-%d %H:%M')}\nКоличество: {last_trade.quantity}\nЦена выхода: {sell_price}\nЦена входа: {price_buy}\n\nПрибыль: {round(profit, 2)}"
+                        f"СТРАТЕГИЯ АНДРЕЯ {'ПРОДАЖА' + purchase_text + 'ЛОНГ' if 'long' in order_type else 'ПОКУПКА' + purchase_text + 'ШОРТ'} {(last_trade.date + datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M')}\nКоличество: {last_trade.quantity}\nЦена выхода: {sell_price}\nЦена входа: {price_buy}\n\nПрибыль: {round(profit, 2)}"
                     )
                     purchases["orders"][ticker]["order_id"] = None
     for message in messages_to_send:
