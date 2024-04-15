@@ -23,7 +23,7 @@ from config import Config
 from markets.tinkoff.utils import (
     get_shares,
     buy_limit_order,
-    place_stop_orders,
+    place_sell_stop_orders,
     moneyvalue_to_float,
     get_account_id,
     get_last_price,
@@ -146,7 +146,7 @@ async def analise_share(share: dict, purchases: dict, client: AsyncServices):
             purchases["orders"][share["ticker"]]["order_id"] = buy_trade.order_id
             purchases["orders"][share["ticker"]]["lot"] = share["lot"]
             purchases["available"] -= last_price * quantity_lot * share["lot"]
-            return f"СТРАТЕГИЯ НИКИТЫ ЗАЯВКА\n\nЗаявка на {share['ticker']} {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} по цене {last_price}\nКол-во: {quantity_lot * share['lot']}"
+            return f"СТРАТЕГИЯ НИКИТЫ ЗАЯВКА\n\nЗаявка на {share['ticker']} на сумму {moneyvalue_to_float(buy_trade.total_order_amount)}\n\n{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} по цене {last_price}\nКол-во: {quantity_lot * share['lot']}"
     return None
 
 
@@ -250,12 +250,14 @@ async def orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
                         stop_loss_price
                         % purchases["orders"][ticker]["min_price_increment"]
                     )
-                    take_profit_response, stop_loss_response = await place_stop_orders(
-                        order.figi,
-                        take_profit_price,
-                        stop_loss_price,
-                        order.lots_executed,
-                        client,
+                    take_profit_response, stop_loss_response = (
+                        await place_sell_stop_orders(
+                            order.figi,
+                            take_profit_price,
+                            stop_loss_price,
+                            order.lots_executed,
+                            client,
+                        )
                     )
                     stop_orders_id_string = str(
                         take_profit_response.stop_order_id

@@ -122,7 +122,7 @@ async def buy_limit_order(
     return order
 
 
-async def place_stop_orders(
+async def place_sell_stop_orders(
     figi: str,
     take_profit_price: float,
     stop_loss_price: float,
@@ -147,6 +147,40 @@ async def place_stop_orders(
             quantity=quantity,
             stop_price=float_to_quotation(stop_loss_price),
             direction=StopOrderDirection.STOP_ORDER_DIRECTION_SELL,
+            account_id=account_id,
+            stop_order_type=StopOrderType.STOP_ORDER_TYPE_STOP_LOSS,
+            instrument_id=figi,
+            expiration_type=StopOrderExpirationType.STOP_ORDER_EXPIRATION_TYPE_GOOD_TILL_CANCEL,
+        )
+    )
+    return (take_profit_response, stop_loss_response)
+
+
+async def place_buy_stop_orders(
+    figi: str,
+    take_profit_price: float,
+    stop_loss_price: float,
+    quantity: int,
+    client: AsyncClient,
+):
+    account_id = await get_account_id(client)
+    take_profit_response: PostStopOrderResponse = (
+        await client.stop_orders.post_stop_order(
+            quantity=quantity,
+            price=float_to_quotation(take_profit_price),
+            stop_price=float_to_quotation(take_profit_price),
+            direction=StopOrderDirection.STOP_ORDER_DIRECTION_BUY,
+            account_id=account_id,
+            stop_order_type=StopOrderType.STOP_ORDER_TYPE_TAKE_PROFIT,
+            instrument_id=figi,
+            expiration_type=StopOrderExpirationType.STOP_ORDER_EXPIRATION_TYPE_GOOD_TILL_CANCEL,
+        )
+    )
+    stop_loss_response: PostStopOrderResponse = (
+        await client.stop_orders.post_stop_order(
+            quantity=quantity,
+            stop_price=float_to_quotation(stop_loss_price),
+            direction=StopOrderDirection.STOP_ORDER_DIRECTION_BUY,
             account_id=account_id,
             stop_order_type=StopOrderType.STOP_ORDER_TYPE_STOP_LOSS,
             instrument_id=figi,

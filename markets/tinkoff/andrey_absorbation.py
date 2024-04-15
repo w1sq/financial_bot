@@ -20,7 +20,9 @@ from markets.tinkoff.candle_model import CustomCandle
 from markets.tinkoff.utils import (
     get_shares,
     buy_market_order,
-    place_stop_orders,
+    sell_market_order,
+    place_sell_stop_orders,
+    place_buy_stop_orders,
     moneyvalue_to_float,
     get_account_id,
     get_history,
@@ -28,15 +30,18 @@ from markets.tinkoff.utils import (
 
 
 class StrategyConfig:
-    take_profit = 2.5  # 2,
-    stop_loss = 0.5  # 0.5
+    minimum_day_volume = 200 * 10**6
+    two_day_take_profit = 2.5
+    two_day_stop_loss = 0.5
+    one_day_take_profit = 5
+    one_day_stop_loss = 1.5
     dynamic_border = True  # статичные или динамические границы ордеров .. идея на потом
     # dynamic_border_mult 2,  # 1.25, # насколько двигаем границу, при достижении профита, .. идея на потом
     falling_indicator_frame_count = 5
     volume = 0  # поизучать
     comission = 0.05  # в процентах
     short_comission = 0.06  # или 0.07, комиссия ежедневная
-    money_in_order = 10000  # виртуальная сумма для сделки
+    money_in_order = 15000  # виртуальная сумма для сделки
     # параметры для Бычьего и Медвежьего поглощения
     first_candle_perc_ba_and_ba = 1
     second_candle_perc_ba_and_ba = 1.5
@@ -97,21 +102,12 @@ async def analisys(
     falling_market_indicator = falling_indicator(last_candles[share["ticker"]])
     # print(share["ticker"], current_custom_candle.open, prev_custom_candle.open)я
 
-    async def create_order(order_candle: CustomCandle):
-        if (
-            prev_custom_candle.volume
-            * share["lot"]
-            * (prev_custom_candle.low + prev_custom_candle.length / 2)
-        ) > 100 * 10**6:
-            print(
-                order_candle.time.strftime("%Y-%m-%d"),
-                share["ticker"],
-                order_candle.type,
-            )
+    async def create_order(order_type: str, order_candle: CustomCandle):
         quantity_lot = int(
             min(StrategyConfig.money_in_order, purchases["available"])
             // (order_candle.close * share["lot"])
         )
+        print(share["ticker"], order_candle.time, order_candle.type)
         if (
             quantity_lot > 0
             and buy
@@ -120,50 +116,20 @@ async def analisys(
                 * share["lot"]
                 * (prev_custom_candle.low + prev_custom_candle.length / 2)
             )
-            > 100 * 10**6
+            > StrategyConfig.minimum_day_volume
         ):
             order_candle.close -= order_candle.close % share["min_price_increment"]
             async with AsyncRetryingClient(
                 Config.ANDREY_TOKEN, Config.RETRY_SETTINGS
             ) as client:
-                buy_trade = await buy_market_order(share["figi"], quantity_lot, client)
-            purchases["orders"][share["ticker"]]["order_id"] = buy_trade.order_id
+                if "long" in order_type:
+                    trade = await buy_market_order(share["figi"], quantity_lot, client)
+                else:
+                    trade = await sell_market_order(share["figi"], quantity_lot, client)
+            purchases["orders"][share["ticker"]]["order_id"] = trade.order_id
+            purchases["orders"][share["ticker"]]["type"] = order_type
             purchases["available"] -= order_candle.close * quantity_lot * share["lot"]
-            return f"СТРАТЕГИЯ АНДРЕЯ ЗАЯВКА {order_candle.type} ЛОНГ\n\nЗаявка на {share['name']}\n{share['ticker']} {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} по цене {order_candle.close}\nКол-во : {quantity_lot * share['lot']}"
-
-    async def create_short_order(order_candle: CustomCandle):
-        if (
-            prev_custom_candle.volume
-            * share["lot"]
-            * (prev_custom_candle.low + prev_custom_candle.length / 2)
-        ) > 100 * 10**6:
-            print(
-                order_candle.time.strftime("%Y-%m-%d"),
-                share["ticker"],
-                order_candle.type,
-            )
-            # quantity_lot = int(
-            #     min(StrategyConfig.money_in_order, purchases["available"])
-            #     // (order_candle.close * share["lot"])
-            # )
-            # if (
-            #     quantity_lot > 0
-            #     and buy
-            #     and (
-            #         prev_custom_candle.volume
-            #         * share["lot"]
-            #         * (prev_custom_candle.low + prev_custom_candle.length / 2)
-            #     )
-            #     > 100 * 10**6
-            # ):
-            #     order_candle.close -= order_candle.close % share["min_price_increment"]
-            # async with AsyncRetryingClient(
-            #     Config.ANDREY_TOKEN, Config.RETRY_SETTINGS
-            # ) as client:
-            #     buy_trade = await buy_market_order(share["figi"], quantity_lot, client)
-            # purchases["orders"][share["ticker"]]["order_id"] = buy_trade.order_id
-            # purchases["available"] -= order_candle.close * quantity_lot * share["lot"]
-            # return f"СТРАТЕГИЯ АНДРЕЯ ЗАЯВКА {order_candle.type}\n\nЗаявка на {share['name']}\n{share['ticker']} {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} по цене {order_candle.close}\nКол-во: {quantity_lot * share['lot']}"
+            return f"СТРАТЕГИЯ АНДРЕЯ ЗАЯВКА {order_candle.type} {'ЛОНГ' if 'long' in order_type else 'ШОРТ'}\n\nЗаявка на {share['name']} на сумму {moneyvalue_to_float(trade.total_order_amount)}\n{share['ticker']} {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} по цене {order_candle.close}\nКол-во : {quantity_lot * share['lot']}"
 
     if (
         (prev_custom_candle.color == "red")
@@ -181,7 +147,7 @@ async def analisys(
         & (falling_market_indicator)
     ):
         current_custom_candle.type = "ПРОНЗАЮЩАЯ СВЕЧА"
-        return await create_order(current_custom_candle)
+        return await create_order("long", current_custom_candle)
     # вход в шорт двухдневная модель "Тёмные облака"
     elif (
         (prev_custom_candle.color == "green")
@@ -199,7 +165,7 @@ async def analisys(
         & (not falling_market_indicator)
     ):
         current_custom_candle.type = "Тёмные облака"
-        return await create_short_order(current_custom_candle)
+        return await create_order("short", current_custom_candle)
     # вход в лонг двухдневная модель "Бычье поглощение"
     elif (
         (prev_custom_candle.color == "red")
@@ -216,7 +182,7 @@ async def analisys(
         & (falling_market_indicator)
     ):
         current_custom_candle.type = "БЫЧЬЕ ПОГЛОЩЕНИЕ"
-        return await create_order(current_custom_candle)
+        return await create_order("long", current_custom_candle)
     # вход в шорт двухдневная модель "Медвежье поглощение"
     elif (
         (prev_custom_candle.color == "green")
@@ -233,7 +199,7 @@ async def analisys(
         & (not falling_market_indicator)
     ):
         current_custom_candle.type = "МЕДВЕЖЬЕ ПОГЛОЩЕНИЕ"
-        return await create_short_order(current_custom_candle)
+        return await create_order("short", current_custom_candle)
     # вход в лонг двухдневная модель "Бычье перекрытие"
     elif (
         (prev_custom_candle.color == "red")
@@ -250,7 +216,7 @@ async def analisys(
         & (falling_market_indicator)
     ):
         current_custom_candle.type = "БЫЧЬЕ ПЕРЕКРЫТИЕ"
-        return await create_order(current_custom_candle)
+        return await create_order("long", current_custom_candle)
     # вход в шорт двухдневная модель Медвежье перекрытие
     elif (
         (prev_custom_candle.color == "green")
@@ -267,7 +233,7 @@ async def analisys(
         & (not falling_market_indicator)
     ):
         current_custom_candle.type = "МЕДВЕЖЬЕ ПЕРЕКРЫТИЕ"
-        return await create_short_order(current_custom_candle)
+        return await create_order("short", current_custom_candle)
     # вход в лонг модель однодневный молот
     if (
         (current_custom_candle.color == "green")
@@ -283,7 +249,7 @@ async def analisys(
         & (falling_market_indicator)
     ):
         current_custom_candle.type = "ОДНОДНЕВНЫЙ МОЛОТ"
-        return await create_order(current_custom_candle)
+        return await create_order("oneday long", current_custom_candle)
     # вход в шорт модель однодневная падающая звезда
     elif (
         (current_custom_candle.color == "red")
@@ -296,7 +262,7 @@ async def analisys(
         & (not falling_market_indicator)
     ):
         current_custom_candle.type = "ОДНОДНЕВНАЯ ПАДАЮЩАЯ ЗВЕЗДА"
-        return await create_short_order(current_custom_candle)
+        return await create_order("oneday short", current_custom_candle)
     return None
 
 
@@ -330,7 +296,7 @@ async def fill_market_data_andrey(purchases: dict):
             async for candle in client.get_all_candles(
                 figi=share["figi"],
                 from_=now_time - datetime.timedelta(days=15),
-                to=now_time - datetime.timedelta(days=2),
+                # to=now_time - datetime.timedelta(days=2),
                 interval=CandleInterval.CANDLE_INTERVAL_DAY,
             ):
                 await analisys(share, candle, purchases, buy=False)
@@ -342,7 +308,8 @@ async def orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
         Config.ANDREY_TOKEN, Config.RETRY_SETTINGS
     ) as client:
         for ticker in purchases["orders"].keys():
-            order_id = purchases["orders"][ticker].get("order_id", None)
+            order_id = purchases["orders"][ticker].get("order_id")
+            order_type = purchases["orders"][ticker].get("type")
             if not order_id or "|" in order_id:
                 continue
             order: OrderState = await client.orders.get_order_state(
@@ -353,12 +320,27 @@ async def orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
                 == OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL
             ):
                 if order.lots_executed > 0:
-                    take_profit_price = moneyvalue_to_float(
-                        order.average_position_price
-                    ) * (1 + StrategyConfig.take_profit / 100)
-                    stop_loss_price = moneyvalue_to_float(
-                        order.average_position_price
-                    ) * (1 - StrategyConfig.stop_loss / 100)
+                    if order_type == "oneday long":
+                        take_profit_price = moneyvalue_to_float(
+                            order.average_position_price
+                        ) * (1 + StrategyConfig.one_day_take_profit / 100)
+                        stop_loss_price = moneyvalue_to_float(
+                            order.average_position_price
+                        ) * (1 - StrategyConfig.one_day_stop_loss / 100)
+                    elif order_type == "long":
+                        take_profit_price = moneyvalue_to_float(
+                            order.average_position_price
+                        ) * (1 + StrategyConfig.two_day_take_profit / 100)
+                        stop_loss_price = moneyvalue_to_float(
+                            order.average_position_price
+                        ) * (1 - StrategyConfig.two_day_stop_loss / 100)
+                    else:
+                        take_profit_price = moneyvalue_to_float(
+                            order.average_position_price
+                        ) * (1 - StrategyConfig.two_day_take_profit / 100)
+                        stop_loss_price = moneyvalue_to_float(
+                            order.average_position_price
+                        ) * (1 + StrategyConfig.two_day_stop_loss / 100)
                     take_profit_price -= (
                         take_profit_price
                         % purchases["orders"][ticker]["min_price_increment"]
@@ -367,17 +349,30 @@ async def orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
                         stop_loss_price
                         % purchases["orders"][ticker]["min_price_increment"]
                     )
-                    purchase_text = f"Покупка {ticker} ЛОНГ {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')} по цене {moneyvalue_to_float(order.average_position_price)} с коммисией {moneyvalue_to_float(order.executed_commission)}\nОбщий объем сделки: {moneyvalue_to_float(order.total_order_amount)}\nКол-во бумаг: {order.lots_executed*purchases['orders'][ticker]['lots']}\nКол-во лотов: {order.lots_executed}\nСтоп-лосс: {stop_loss_price}\nТейк-профит: {take_profit_price}"
+                    purchase_text = f"Покупка {ticker} {'ЛОНГ' if 'long' in order_type else 'ШОРТ'} {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')} по цене {moneyvalue_to_float(order.average_position_price)} с коммисией {moneyvalue_to_float(order.executed_commission)}\nОбщий объем сделки: {moneyvalue_to_float(order.total_order_amount)}\nКол-во бумаг: {order.lots_executed*purchases['orders'][ticker]['lots']}\nКол-во лотов: {order.lots_executed}\nСтоп-лосс: {stop_loss_price}\nТейк-профит: {take_profit_price}"
                     messages_to_send.append(
                         "СТРАТЕГИЯ АНДРЕЯ ПОКУПКА\n\n" + purchase_text
                     )
-                    take_profit_response, stop_loss_response = await place_stop_orders(
-                        order.figi,
-                        take_profit_price,
-                        stop_loss_price,
-                        order.lots_executed,
-                        client,
-                    )
+                    if "long" in order_type:
+                        take_profit_response, stop_loss_response = (
+                            await place_sell_stop_orders(
+                                order.figi,
+                                take_profit_price,
+                                stop_loss_price,
+                                order.lots_executed,
+                                client,
+                            )
+                        )
+                    else:
+                        take_profit_response, stop_loss_response = (
+                            await place_buy_stop_orders(
+                                order.figi,
+                                take_profit_price,
+                                stop_loss_price,
+                                order.lots_executed,
+                                client,
+                            )
+                        )
                     stop_orders_id_string = str(
                         take_profit_response.stop_order_id
                         + "|"
@@ -433,6 +428,7 @@ async def stop_orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
         # ]
         for ticker in purchases["orders"].keys():
             order_id = purchases["orders"][ticker].get("order_id")
+            order_type = purchases["orders"][ticker].get("type")
             figi = purchases["orders"][ticker].get("figi")
             if not order_id or "|" not in order_id:
                 continue
@@ -457,9 +453,18 @@ async def stop_orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
                             )
                         except AioRequestError as e:
                             print(e)
-                        price_buy = take_profit_price / (
-                            1 + StrategyConfig.take_profit / 100
-                        )
+                        if order_type == "oneday long":
+                            price_buy = take_profit_price / (
+                                1 + StrategyConfig.one_day_take_profit / 100
+                            )
+                        elif order_type == "long":
+                            price_buy = take_profit_price / (
+                                1 + StrategyConfig.two_day_take_profit / 100
+                            )
+                        else:
+                            price_buy = take_profit_price / (
+                                1 - StrategyConfig.two_day_take_profit / 100
+                            )
                     else:
                         try:
                             await client.stop_orders.cancel_stop_order(
@@ -468,13 +473,25 @@ async def stop_orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
                             )
                         except AioRequestError as e:
                             print(e)
-                        price_buy = stop_loss_price / (
-                            1 - StrategyConfig.stop_loss / 100
-                        )
-                    profit = lots_traded * (sell_price - price_buy)
+                        if order_type == "oneday long":
+                            price_buy = take_profit_price / (
+                                1 - StrategyConfig.one_day_stop_loss / 100
+                            )
+                        elif order_type == "long":
+                            price_buy = take_profit_price / (
+                                1 - StrategyConfig.two_day_stop_loss / 100
+                            )
+                        else:
+                            price_buy = take_profit_price / (
+                                1 + StrategyConfig.two_day_stop_loss / 100
+                            )
+                    if "long" in order_type:
+                        profit = lots_traded * (price_buy - sell_price)
+                    else:
+                        profit = lots_traded * (price_buy - sell_price)
                     purchases["available"] += moneyvalue_to_float(last_trade.payment)
                     messages_to_send.append(
-                        f"СТРАТЕГИЯ АНДРЕЯ ПРОДАЖА\n\n{purchase_text}\n\nПродажа ЛОНГ {last_trade.date.strftime('%Y-%m-%d %H:%M')}\nКоличество: {last_trade.quantity}\nЦена выхода: {sell_price}\nЦена входа: {price_buy}\n\nПрибыль: {round(profit, 2)}"
+                        f"СТРАТЕГИЯ АНДРЕЯ ПРОДАЖА\n\n{purchase_text}\n\nПродажа {'ЛОНГ' if 'long' in order_type else 'ШОРТ'} {last_trade.date.strftime('%Y-%m-%d %H:%M')}\nКоличество: {last_trade.quantity}\nЦена выхода: {sell_price}\nЦена входа: {price_buy}\n\nПрибыль: {round(profit, 2)}"
                     )
                     purchases["orders"][ticker]["order_id"] = None
     for message in messages_to_send:

@@ -84,6 +84,7 @@ class Launcher:
             "cron",
             hour="10-23",
             second="00",
+            day_of_week="mon-fri",
             args=[self.tg_bot, self.strategies_data["nikita"]],
         )
         scheduler.add_job(
@@ -111,6 +112,7 @@ class Launcher:
             "cron",
             second="00",
             hour="10-23",
+            day_of_week="mon-fri",
             args=[self.tg_bot, self.strategies_data["andrey"]],
         )
         scheduler.add_job(
@@ -135,7 +137,7 @@ class Launcher:
         # scheduler.start()
 
         # await fill_data_nikita(self.strategies_data["nikita"])
-        # await fill_market_data_andrey(self.strategies_data["andrey"])
+        await fill_market_data_andrey(self.strategies_data["andrey"])
         tasks = [
             market_review_andrey(self.tg_bot, self.strategies_data["andrey"]),
             # market_review_candles(self.tg_bot),

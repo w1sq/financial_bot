@@ -13,7 +13,7 @@ from config import Config
 from markets.tinkoff.utils import (
     get_shares,
     buy_market_order,
-    place_stop_orders,
+    place_sell_stop_orders,
     moneyvalue_to_float,
     get_account_id,
     # get_history,
@@ -165,12 +165,14 @@ async def orders_check_andrey(tg_bot: TG_Bot, purchases: dict):
                         stop_loss_price
                         % purchases["orders"][ticker]["min_price_increment"]
                     )
-                    take_profit_response, stop_loss_response = await place_stop_orders(
-                        order.figi,
-                        take_profit_price,
-                        stop_loss_price,
-                        order.lots_executed,
-                        client,
+                    take_profit_response, stop_loss_response = (
+                        await place_sell_stop_orders(
+                            order.figi,
+                            take_profit_price,
+                            stop_loss_price,
+                            order.lots_executed,
+                            client,
+                        )
                     )
                     stop_orders_id_string = str(
                         take_profit_response.stop_order_id
