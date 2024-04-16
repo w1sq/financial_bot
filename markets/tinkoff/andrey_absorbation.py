@@ -54,13 +54,17 @@ class StrategyConfig:
     first_candle_perc_bс_and_bс = 1  # 1.2 1.5
     second_candle_perc_bс_and_bс = 1.5
     body_perc_bс_and_bс = 55  # 70  # 55
-    # параметры для молота и падающей звезды
+    # параметры для молотов
     hammer_candle_length_perc = 1.5
     hammer_low_shadow_perc = 75
     hammer_body_perc = 10
+    # параметры для креста и падающей звезды
     star_candle_length_perc = 1.5
-    star_high_shadow_perc = 75
-    star_body_perc = 10
+    star_high_shadow_perc = 80
+    star_body_perc = 5
+    croos_candle_length_perc = 1.5
+    cross_low_shadow_perc = 80
+    cross_body_perc = 5
 
 
 def get_candle_body_perc(candle: HistoricCandle) -> float:
@@ -235,7 +239,7 @@ async def analisys(
         current_custom_candle.type = "МЕДВЕЖЬЕ ПЕРЕКРЫТИЕ"
         return await create_order("short", current_custom_candle)
     # вход в лонг модель однодневный молот
-    if (
+    elif (
         (current_custom_candle.color == "green")
         & (
             current_custom_candle.length_perc
@@ -250,19 +254,46 @@ async def analisys(
     ):
         current_custom_candle.type = "ОДНОДНЕВНЫЙ МОЛОТ"
         return await create_order("oneday long", current_custom_candle)
-    # вход в шорт модель однодневная падающая звезда
+    # вход в шорт модель однодневный перевернутый молот
     elif (
         (current_custom_candle.color == "red")
-        & (current_custom_candle.length_perc >= StrategyConfig.star_candle_length_perc)
+        & (
+            current_custom_candle.length_perc
+            >= StrategyConfig.hammer_candle_length_perc
+        )
+        & (
+            current_custom_candle.high_shadow_perc
+            >= StrategyConfig.hammer_low_shadow_perc
+        )
+        & (current_custom_candle.body_perc > StrategyConfig.hammer_body_perc)
+        & (not falling_market_indicator)
+    ):
+        current_custom_candle.type = "ОДНОДНЕВНЫЙ ПЕРЕВЕРНУТЫЙ МОЛОТ"
+        return await create_order("oneday short", current_custom_candle)
+    # вход в шорт модель однодневная падающая звезда
+    elif (
+        (current_custom_candle.length_perc >= StrategyConfig.star_candle_length_perc)
         & (
             current_custom_candle.high_shadow_perc
             >= StrategyConfig.star_high_shadow_perc
         )
-        & (current_custom_candle.body_perc > StrategyConfig.star_body_perc)
+        & (current_custom_candle.body_perc < StrategyConfig.star_body_perc)
         & (not falling_market_indicator)
     ):
-        current_custom_candle.type = "ОДНОДНЕВНАЯ ПАДАЮЩАЯ ЗВЕЗДА"
+        current_custom_candle.type = "ОДНОДНЕВНАЯ ПОДАЮЩАЯ ЗВЕЗДА"
         return await create_order("oneday short", current_custom_candle)
+    # вход в лонг модель однодневный крест
+    elif (
+        (current_custom_candle.length_perc >= StrategyConfig.croos_candle_length_perc)
+        & (
+            current_custom_candle.low_shadow_perc
+            >= StrategyConfig.cross_low_shadow_perc
+        )
+        & (current_custom_candle.body_perc < StrategyConfig.cross_body_perc)
+        & falling_market_indicator
+    ):
+        current_custom_candle.type = "ОДНОДНЕВНЫЙ КРЕСТ"
+        return await create_order("oneday long", current_custom_candle)
     return None
 
 

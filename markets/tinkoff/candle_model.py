@@ -42,8 +42,8 @@ class CustomCandle:
         )
         if vol_treshold < self.volume:
             for candle_function in (
-                cross_5_low,
-                cross_5_high,
+                cross,
+                falling_star,
                 hammer_candle_25,
                 star_candle_25,
                 escimo,
@@ -144,8 +144,10 @@ def hammer_candle_25(
 ) -> str | bool:  # свеча молот - где "тело + верхняя часть" в четверть
     treshold = 0
 
-    if treshold < candle.length and 60 <= candle.low_shadow_perc < 100:
-        return candle.color + "_hammer_25"
+    if treshold < candle.length and candle.body_perc > 10 and candle.low_shadow_perc >= 75:
+        return candle.color + "_hammer"
+    elif treshold < candle.length and candle.body_perc > 10 and candle.high_shadow_perc >= 75:
+        return candle.color + "_reversed_hammer"
 
     return False
 
@@ -155,7 +157,7 @@ def star_candle_25(
 ) -> str | bool:  # свеча звезда - где "тело + нижняя часть" в четверть
     treshold = 0
 
-    if treshold < candle.length and 60 <= candle.high_shadow_perc < 100:
+    if treshold < candle.length and 60 <= candle.high_shadow_perc:
         return candle.color + "_star_25"
 
     return False
@@ -177,24 +179,24 @@ def escimo(
     return False
 
 
-def cross_5_low(
+def cross(
     candle: CustomCandle,
 ) -> (
     str | bool
 ):  # свеча 'крест лоу' - узкое тело, маленькая верхняя тень, большое нисходящее движение
-    if candle.body_perc <= 5 and candle.high_shadow_perc <= 30:
-        return "cross_5_low"
+    if candle.body_perc <= 5 and candle.low_shadow_perc >= 80:
+        return "cross"
 
     return False
 
 
-def cross_5_high(
+def falling_star(
     candle: CustomCandle,
 ) -> (
     str | bool
 ):  # свеча 'крест' - узкое тело, маленькая большая тень, большое восходящее движение
-    if candle.body_perc <= 5 and candle.low_shadow_perc <= 30:
-        return "cross_5_high"
+    if candle.body_perc <= 5 and candle.high_shadow_perc >= 80:
+        return "falling_star"
 
     return False
 

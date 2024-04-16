@@ -25,10 +25,10 @@ async def main():
 
         # pprint(await get_history(client))
 
-        pprint(await client.stop_orders.get_stop_orders(account_id=acc_id))
+        # pprint(await client.stop_orders.get_stop_orders(account_id=acc_id))
 
-        # portfolio = await client.operations.get_portfolio(account_id=acc_id)
-        # pprint(portfolio)
+        portfolio = await client.operations.get_portfolio(account_id=acc_id)
+        pprint(portfolio)
 
 
 if __name__ == "__main__":
