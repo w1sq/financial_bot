@@ -122,6 +122,49 @@ async def buy_limit_order(
     return order
 
 
+async def place_take_profit_sell(
+    figi: str,
+    take_profit_price: float,
+    quantity: int,
+    client: AsyncClient,
+):
+    account_id = await get_account_id(client)
+    take_profit_response: PostStopOrderResponse = (
+        await client.stop_orders.post_stop_order(
+            quantity=quantity,
+            price=float_to_quotation(take_profit_price),
+            stop_price=float_to_quotation(take_profit_price),
+            direction=StopOrderDirection.STOP_ORDER_DIRECTION_SELL,
+            account_id=account_id,
+            stop_order_type=StopOrderType.STOP_ORDER_TYPE_TAKE_PROFIT,
+            instrument_id=figi,
+            expiration_type=StopOrderExpirationType.STOP_ORDER_EXPIRATION_TYPE_GOOD_TILL_CANCEL,
+        )
+    )
+    return take_profit_response
+
+
+async def place_stop_loss_sell(
+    figi: str,
+    stop_loss_price: float,
+    quantity: int,
+    client: AsyncClient,
+):
+    account_id = await get_account_id(client)
+    stop_loss_response: PostStopOrderResponse = (
+        await client.stop_orders.post_stop_order(
+            quantity=quantity,
+            stop_price=float_to_quotation(stop_loss_price),
+            direction=StopOrderDirection.STOP_ORDER_DIRECTION_SELL,
+            account_id=account_id,
+            stop_order_type=StopOrderType.STOP_ORDER_TYPE_STOP_LOSS,
+            instrument_id=figi,
+            expiration_type=StopOrderExpirationType.STOP_ORDER_EXPIRATION_TYPE_GOOD_TILL_CANCEL,
+        )
+    )
+    return stop_loss_response
+
+
 async def place_sell_stop_orders(
     figi: str,
     take_profit_price: float,
@@ -220,7 +263,7 @@ async def get_last_price(figi: str, client: AsyncServices) -> float:
 
 async def get_history(client: AsyncServices) -> List[Operation]:
     account_id = await get_account_id(client)
-    ten_min_ago = datetime.datetime.now(pytz.utc) - datetime.timedelta(days=1)
+    ten_min_ago = datetime.datetime.now(pytz.utc) - datetime.timedelta(hours=2)
     try:
         history = await client.operations.get_operations(
             account_id=account_id,

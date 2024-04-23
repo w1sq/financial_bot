@@ -1,4 +1,3 @@
-from typing import List
 from dataclasses import dataclass
 
 
@@ -22,7 +21,7 @@ class CustomCandle:
         self.length = self.high - self.low
         self.body_val = abs(self.open - self.close)
         self.length_perc = self.length / self.high * 100
-        self.type = None
+        self.type = "trash"
         if self.length == 0:
             self.low_shadow_perc = 0.0
             self.high_shadow_perc = 0.0
@@ -44,18 +43,16 @@ class CustomCandle:
             for candle_function in (
                 cross,
                 falling_star,
-                hammer_candle_25,
-                star_candle_25,
-                escimo,
                 hammer_candle,
-                star_candle,
+                escimo,
                 middle_candle,
             ):
                 candle_type = candle_function(self)
                 if candle_type:
                     self.type = candle_type
-                    return
-        self.type = "trash"
+
+    def __str__(self):
+        return f"Open: {self.open}, High: {self.high}, Low: {self.low}, Close: {self.close}, Volume: {self.volume}, Time: {self.time}, High shadow: {self.high_shadow_val}, Low shadow: {self.low_shadow_val}, Length: {self.length}, Body: {self.body_val}, Length perc: {self.length_perc}, High shadow perc: {self.high_shadow_perc}, Low shadow perc: {self.low_shadow_perc}, Body perc: {self.body_perc}, Color: {self.color}, Type: {self.type}"
 
 
 @dataclass
@@ -73,38 +70,51 @@ class TradeData:
 
 
 def hammer_candle(candle: CustomCandle) -> str | bool:
-    treshold = 0  # длина свечи (от лоу до хай), ниже которого определение типа свечи нецелесообразно
-
     if (
-        treshold < candle.length
-        and 0 < candle.high_shadow_perc < 15
-        and 0 < candle.body_perc < 15
-        and 0 < candle.low_shadow_perc < 100
+        candle.length_perc >= 1.5
+        and candle.body_perc >= 10
+        and candle.low_shadow_perc >= 75
     ):
         return candle.color + "_hammer"
+    elif (
+        candle.length_perc >= 1.5
+        and candle.body_perc >= 10
+        and candle.high_shadow_perc >= 75
+    ):
+        return candle.color + "_reversed_hammer"
 
     return False
 
 
-def star_candle(candle: CustomCandle) -> str | bool:
-    treshold = 0  # длина свечи (от лоу до хай), ниже которого определение типа свечи нецелесообразно
-
+def cross(
+    candle: CustomCandle,
+) -> str | bool:
     if (
-        treshold < candle.length
-        and 0 < candle.low_shadow_perc < 15
-        and 0 < candle.body_perc < 15
-        and 0 < candle.high_shadow_perc < 100
+        candle.length_perc >= 1.5
+        and candle.body_perc <= 10
+        and candle.low_shadow_perc >= 75
     ):
-        return candle.color + "_star"
+        return candle.color + "_cross"
+
+    return False
+
+
+def falling_star(
+    candle: CustomCandle,
+) -> str | bool:
+    if (
+        candle.length_perc >= 1.5
+        and candle.body_perc <= 10
+        and candle.high_shadow_perc >= 75
+    ):
+        return candle.color + "_falling_star"
 
     return False
 
 
 def middle_candle(candle: CustomCandle) -> str | bool:
-    treshold = 0  # длина свечи (от лоу до хай), ниже которого определение типа свечи нецелесообразно
-
     if (
-        treshold < candle.length
+        candle.length_perc >= 1.5
         and 20 < candle.low_shadow_perc
         and 20 < candle.body_perc
         and 20 < candle.high_shadow_perc
@@ -114,62 +124,11 @@ def middle_candle(candle: CustomCandle) -> str | bool:
     return False
 
 
-def trigger_hammer_middle(
-    _situation: List[TradeData],
-):  # сначала свеча "молот", потом свеча "мидл", пробелы в виде "trash" - допустимы
-    signals_list = []
-
-    pure_situation = []
-    for situation in _situation:
-        if situation.candle.type != "trash":
-            pure_situation.append(situation)
-
-    for i in range(1, len(pure_situation)):
-        if (
-            "hammer" in pure_situation[i - 1].candle.type
-            and "middle" in pure_situation[i].candle.type
-        ):
-            signals_list.append(
-                pure_situation[i - 1].date
-                + "-"
-                + pure_situation[i].date
-                + " паттерн молот-миддл"
-            )
-
-    return signals_list
-
-
-def hammer_candle_25(
-    candle: CustomCandle,
-) -> str | bool:  # свеча молот - где "тело + верхняя часть" в четверть
-    treshold = 0
-
-    if treshold < candle.length and candle.body_perc > 10 and candle.low_shadow_perc >= 75:
-        return candle.color + "_hammer"
-    elif treshold < candle.length and candle.body_perc > 10 and candle.high_shadow_perc >= 75:
-        return candle.color + "_reversed_hammer"
-
-    return False
-
-
-def star_candle_25(
-    candle: CustomCandle,
-) -> str | bool:  # свеча звезда - где "тело + нижняя часть" в четверть
-    treshold = 0
-
-    if treshold < candle.length and 60 <= candle.high_shadow_perc:
-        return candle.color + "_star_25"
-
-    return False
-
-
 def escimo(
     candle: CustomCandle,
 ) -> str | bool:  # свеча 'эскимо' - большое зеленое тело, нижняя тень больше верхней
-    treshold = 0  # длина свечи (от лоу до хай), ниже которого определение типа свечи нецелесообразно
-
     if (
-        treshold < candle.length
+        candle.length_perc >= 1.5
         and candle.high_shadow_perc < candle.low_shadow_perc
         and 40 < candle.body_perc < 80
         and candle.color == "green"
@@ -177,109 +136,3 @@ def escimo(
         return "escimo"
 
     return False
-
-
-def cross(
-    candle: CustomCandle,
-) -> (
-    str | bool
-):  # свеча 'крест лоу' - узкое тело, маленькая верхняя тень, большое нисходящее движение
-    if candle.body_perc <= 5 and candle.low_shadow_perc >= 80:
-        return "cross"
-
-    return False
-
-
-def falling_star(
-    candle: CustomCandle,
-) -> (
-    str | bool
-):  # свеча 'крест' - узкое тело, маленькая большая тень, большое восходящее движение
-    if candle.body_perc <= 5 and candle.high_shadow_perc >= 80:
-        return "falling_star"
-
-    return False
-
-
-def pure_candles_list(situations: List[TradeData]):
-    pure_candles = []
-    cross_candles = []
-
-    for index, situation in enumerate(situations):
-        quality = "Bad_length"  # оцениваем качество свечи: "длина < 1.5% цены" - "bad", "1.5% цены <= длина < 2% цены" - "normal", "2% цены < длина" - "good"
-        _candle_div_price = 100 * (situation.high - situation.low) / situation.low
-
-        if 1.5 <= _candle_div_price < 2:
-            quality = "Normal_length"
-        elif 2 < _candle_div_price:
-            quality = "Good_length"
-
-        vol_change_yest = "normal"  # отслеживаем изменения объёмов (х2) относительно "вчера", "3-дневного среднего", "5-дневного среднего"
-        vol_change_3_day = "normal"
-        vol_change_5_day = "normal"
-
-        if 1 <= index:
-            if situation.volume >= 2 * situations[index - 1].volume:
-                vol_change_yest = "yest_day_vol_alert"
-
-        if 3 <= index:
-            if (
-                situation.volume
-                >= 2
-                * (
-                    situations[index - 1].volume
-                    + situations[index - 2].volume
-                    + situations[index - 3].volume
-                )
-                / 3
-            ):
-                vol_change_3_day = "3_day_vol_alert"
-
-        if 5 <= index:
-            if (
-                situation.volume
-                >= 2
-                * (
-                    situations[index - 1].volume
-                    + situations[index - 2].volume
-                    + situations[index - 3].volume
-                    + situations[index - 4].volume
-                    + situations[index - 5].volume
-                )
-                / 5
-            ):
-                vol_change_5_day = "5_day_vol_alert"
-
-        if situation.candle.type != "trash":
-            pure_candles.append(
-                situation.date
-                + " "
-                + situation.candle.type
-                + " "
-                + quality
-                + " "
-                + vol_change_yest
-                + " "
-                + vol_change_3_day
-                + " "
-                + vol_change_5_day
-            )
-        if (
-            situation.candle.type == "cross_5_low"
-            or situation.candle.type == "cross_5_high"
-        ):
-            cross_candles.append(
-                situation.date
-                + " "
-                + situation.candle.type
-                + " "
-                + quality
-                + " "
-                + vol_change_yest
-                + " "
-                + vol_change_3_day
-                + " "
-                + vol_change_5_day
-            )
-
-    return pure_candles, cross_candles

@@ -6,12 +6,12 @@ from typing import Dict
 import asyncio
 import aiogram
 
-# from markets.tinkoff.scarping import market_review_scarping
 from markets.tinkoff.nikita import (
     market_review_nikita,
     orders_check_nikita,
     stop_orders_check_nikita,
     fill_data_nikita,
+    update_lowest_prices_nikita,
 )
 
 from markets.tinkoff.andrey_absorbation import (
@@ -134,13 +134,14 @@ class Launcher:
             second="30",
             args=[self.strategies_data],
         )
-        # scheduler.start()
+        scheduler.start()
 
-        # await fill_data_nikita(self.strategies_data["nikita"])
+        await fill_data_nikita(self.strategies_data["nikita"])
         await fill_market_data_andrey(self.strategies_data["andrey"])
         tasks = [
-            market_review_andrey(self.tg_bot, self.strategies_data["andrey"]),
+            # market_review_andrey(self.tg_bot, self.strategies_data["andrey"]),
             # market_review_candles(self.tg_bot),
+            update_lowest_prices_nikita(self.strategies_data["nikita"]),
             self.main(),
         ]
         await asyncio.gather(*tasks)

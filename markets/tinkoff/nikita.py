@@ -1,29 +1,36 @@
 import datetime
 from typing import List, Dict, Tuple
 
-
 import pandas
-import numpy
-from tinkoff.invest import AsyncClient, HistoricCandle, CandleInterval
+import asyncio
 from tinkoff.invest.retrying.aio.client import AsyncRetryingClient
 from tinkoff.invest.exceptions import AioRequestError
 from tinkoff.invest.async_services import AsyncServices
-
 from tinkoff.invest.utils import quotation_to_decimal
 from tinkoff.invest import (
     OrderState,
     OrderExecutionReportStatus,
     OperationType,
     OperationState,
+    CandleInstrument,
+    AsyncClient,
+    HistoricCandle,
+    CandleInterval,
+    MarketDataRequest,
+    SubscribeCandlesRequest,
+    SubscriptionAction,
+    SubscriptionInterval,
 )
-
 
 from bot import TG_Bot
 from config import Config
 from markets.tinkoff.utils import (
     get_shares,
     buy_limit_order,
+    place_stop_loss_sell,
     place_sell_stop_orders,
+    buy_market_order,
+    place_take_profit_sell,
     moneyvalue_to_float,
     get_account_id,
     get_last_price,
@@ -34,7 +41,7 @@ from markets.tinkoff.utils import (
 class StrategyConfig:
     bolinger_mult = 2
     bollinger_frame_count = 20
-    rsi_count_frame = 14  # 14 actually
+    rsi_count_frame = 14
     strategy_bollinger_range = 1.5
     rsi_treshold = 30
     take_profit = 0.4
@@ -69,8 +76,6 @@ def strategy(last_price: float, ticker: str) -> bool:
     if len(local_data_rsi) < StrategyConfig.rsi_count_frame:
         return False
     rsi = calculate_rsi(pandas.Series(local_data_rsi))
-    # if rsi < 30:
-    #     print("rsi", rsi)
     if (
         last_price
         < (
@@ -239,41 +244,25 @@ async def orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
                     take_profit_price = moneyvalue_to_float(
                         order.average_position_price
                     ) * (1 + StrategyConfig.take_profit / 100)
-                    stop_loss_price = moneyvalue_to_float(
-                        order.average_position_price
-                    ) * (1 - StrategyConfig.stop_loss / 100)
                     take_profit_price -= (
                         take_profit_price
                         % purchases["orders"][ticker]["min_price_increment"]
                     )
-                    stop_loss_price -= (
-                        stop_loss_price
-                        % purchases["orders"][ticker]["min_price_increment"]
-                    )
-                    take_profit_response, stop_loss_response = (
-                        await place_sell_stop_orders(
-                            order.figi,
-                            take_profit_price,
-                            stop_loss_price,
-                            order.lots_executed,
-                            client,
-                        )
+                    take_profit_response = await place_take_profit_sell(
+                        order.figi,
+                        take_profit_price,
+                        order.lots_executed,
+                        client,
                     )
                     stop_orders_id_string = str(
-                        take_profit_response.stop_order_id
-                        + "|"
-                        + stop_loss_response.stop_order_id,
+                        take_profit_response.stop_order_id + "|"
                     )
                     purchases["orders"][ticker]["order_id"] = stop_orders_id_string
-                    purchases["orders"][ticker]["order_data"] = (
-                        purchase_text,
-                        take_profit_price,
-                        stop_loss_price,
-                        order.lots_executed,
+                    purchases["orders"][ticker]["order_data"] = purchase_text
+                    purchases["orders"][ticker]["price_buy"] = moneyvalue_to_float(
+                        order.average_position_price
                     )
-                    # purchases["available"] -= moneyvalue_to_float(
-                    #     order.executed_order_price
-                    # )
+                    purchases["orders"][ticker]["quantity"] = order.lots_executed
                 else:
                     messages_to_send.append(
                         f"СТРАТЕГИЯ НИКИТЫ ОТМЕНА\n\nОтмена {ticker} {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')}"
@@ -304,75 +293,126 @@ async def stop_orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
         Config.NIKITA_TOKEN, Config.RETRY_SETTINGS
     ) as client:
         last_trades = await get_history(client)
-        if not last_trades:
-            return None
-        # active_stop_orders = await client.stop_orders.get_stop_orders(
-        #     account_id=str(await get_account_id(client))
-        # )
-        # active_stop_orders_ids = [
-        #     stop_order.stop_order_id for stop_order in active_stop_orders.stop_orders
-        # ]
         for ticker in purchases["orders"].keys():
             order_id = purchases["orders"][ticker].get("order_id")
             if not order_id or "|" not in order_id:
                 continue
             take_profit_order_id, stop_loss_order_id = order_id.split("|")
             figi = purchases["orders"][ticker].get("figi")
-            for last_trade in last_trades:
-                if (
-                    last_trade.figi == figi
-                    and last_trade.operation_type == OperationType.OPERATION_TYPE_SELL
-                    and last_trade.state == OperationState.OPERATION_STATE_EXECUTED
-                ):
-                    (purchase_text, take_profit_price, stop_loss_price, lots_traded) = (
-                        purchases["orders"][ticker]["order_data"]
-                    )
-                    sell_price = moneyvalue_to_float(last_trade.price)
-                    if abs(sell_price - take_profit_price) < abs(
-                        sell_price - stop_loss_price
+            price_buy = purchases["orders"][ticker].get("price_buy", 0)
+            quantity = purchases["orders"][ticker].get("quantity", 0)
+            if last_trades:
+                for last_trade in last_trades:
+                    if (
+                        last_trade.figi == figi
+                        and last_trade.operation_type
+                        == OperationType.OPERATION_TYPE_SELL
+                        and last_trade.state == OperationState.OPERATION_STATE_EXECUTED
                     ):
-                        try:
-                            await client.stop_orders.cancel_stop_order(
-                                account_id=await get_account_id(client),
-                                stop_order_id=stop_loss_order_id,
-                            )
-                        except Exception as e:
-                            pass
-                        price_buy = take_profit_price / (
-                            1 + StrategyConfig.take_profit / 100
+                        purchase_text = purchases["orders"][ticker].pop("order_data")
+                        order_id = purchases["orders"][ticker].pop("order_id")
+                        sell_price = moneyvalue_to_float(last_trade.price)
+                        profit = last_trade.quantity * (sell_price - price_buy)
+                        purchases["available"] += moneyvalue_to_float(
+                            last_trade.payment
                         )
-                    else:
-                        try:
-                            await client.stop_orders.cancel_stop_order(
-                                account_id=await get_account_id(client),
-                                stop_order_id=take_profit_order_id,
-                            )
-                        except Exception as e:
-                            pass
-                        price_buy = stop_loss_price / (
-                            1 - StrategyConfig.stop_loss / 100
+                        messages_to_send.append(
+                            f"СТРАТЕГИЯ НИКИТЫ ПРОДАЖА\n\n{purchase_text}\n\nПродажа {(last_trade.date + datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M')} по цене {sell_price}\n\nПрибыль: {round(profit, 2)}"
                         )
-                    profit = lots_traded * (sell_price - price_buy)
-                    purchases["available"] += moneyvalue_to_float(last_trade.payment)
-                    messages_to_send.append(
-                        f"СТРАТЕГИЯ НИКИТЫ ПРОДАЖА\n\n{purchase_text}\n\nПродажа {(last_trade.date + datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M')} по цене {sell_price}\n\nПрибыль: {round(profit, 2)}"
+                        purchases["orders"][ticker] = {
+                            "last_sell": (
+                                last_trade.date + datetime.timedelta(hours=3)
+                            ).strftime("%Y-%m-%d %H:%M"),
+                            "min_price_increment": purchases["orders"][ticker][
+                                "min_price_increment"
+                            ],
+                            "figi": purchases["orders"][ticker]["figi"],
+                            "lot": purchases["orders"][ticker]["lot"],
+                            "averaging": False,
+                        }
+            if (
+                purchases["orders"][ticker]["averaging"] is False
+                and price_buy
+                and quantity
+                and purchases["orders"][ticker].get("lowest_price", 10e9)
+                < price_buy * (1 - StrategyConfig.stop_loss / 100)
+            ):
+                trade = await buy_market_order(figi, quantity, client)
+                messages_to_send.append(
+                    f"СТРАТЕГИЯ НИКИТЫ ПОКУПКА\n\n{purchase_text}\n\nУсреднение на сумму {moneyvalue_to_float(trade.total_order_amount)} по цене {moneyvalue_to_float(trade.executed_order_price)}\nКоличество: {quantity*purchases['orders'][ticker].get('lot',0)}"
+                )
+                try:
+                    await client.stop_orders.cancel_stop_order(
+                        account_id=await get_account_id(client),
+                        stop_order_id=take_profit_order_id,
                     )
-                    purchases["orders"][ticker] = {
-                        "last_sell": (
-                            last_trade.date + datetime.timedelta(hours=3)
-                        ).strftime("%Y-%m-%d %H:%M"),
-                        "min_price_increment": purchases["orders"][ticker][
-                            "min_price_increment"
-                        ],
-                        "figi": purchases["orders"][ticker]["figi"],
-                        "averaging": False,
-                    }
+                except Exception as e:
+                    print(e)
+                take_profit_price = price_buy * (1 + StrategyConfig.take_profit / 100)
+                stop_loss_price = price_buy * (1 - (StrategyConfig.stop_loss * 2) / 100)
+                take_profit_price -= (
+                    take_profit_price
+                    % purchases["orders"][ticker]["min_price_increment"]
+                )
+                stop_loss_price -= (
+                    stop_loss_price % purchases["orders"][ticker]["min_price_increment"]
+                )
+                take_profit_response, stop_loss_response = await place_sell_stop_orders(
+                    figi,
+                    take_profit_price,
+                    stop_loss_price,
+                    quantity * 2,
+                    client,
+                )
+                stop_orders_id_string = str(
+                    take_profit_response.stop_order_id
+                    + "|"
+                    + stop_loss_response.stop_order_id
+                )
+                purchases["orders"][ticker]["order_id"] = stop_orders_id_string
+                purchases["orders"][ticker]["averaging"] = True
+
     for message in messages_to_send:
         await tg_bot.send_signal(
             message=message,
             strategy="nikita",
             volume=0,
         )
+
+
+async def update_lowest_prices_nikita(purchases: Dict[str, Dict]):
+    figis = []
+    figi_to_ticker = {}
+    for ticker, order_info in purchases["orders"].items():
+        figi = order_info.get("figi")
+        figis.append(figi)
+        figi_to_ticker[figi] = ticker
+
+    async def request_iterator():
+        yield MarketDataRequest(
+            subscribe_candles_request=SubscribeCandlesRequest(
+                waiting_close=True,
+                subscription_action=SubscriptionAction.SUBSCRIPTION_ACTION_SUBSCRIBE,
+                instruments=[
+                    CandleInstrument(
+                        figi=figi,
+                        interval=SubscriptionInterval.SUBSCRIPTION_INTERVAL_ONE_MINUTE,
+                    )
+                    for figi in figis
+                ],
+            )
+        )
+        while True:
+            await asyncio.sleep(1)
+
+    async with AsyncClient(Config.READONLY_TOKEN) as client:
+        async for marketdata in client.market_data_stream.market_data_stream(
+            request_iterator()
+        ):
+            if marketdata.candle:
+                purchases["orders"][figi_to_ticker[marketdata.candle.figi]][
+                    "lowest_price"
+                ] = float(quotation_to_decimal(marketdata.candle.low))
 
 
 async def market_review_nikita(tg_bot: TG_Bot, purchases: Dict[str, Dict]):
@@ -391,23 +431,3 @@ async def market_review_nikita(tg_bot: TG_Bot, purchases: Dict[str, Dict]):
                 strategy="nikita",
                 volume=0,
             )
-
-
-# import asyncio
-
-
-# async def main():
-#     await fill_data_nikita()
-#     scheduler = AsyncIOScheduler()
-#     scheduler.add_job(
-#         market_review_nikita,
-#         "cron",
-#         hour="10-23",
-#         second="00",
-#         args=[self.tg_bot, self.strategies_data["nikita"]],
-#     )
-
-
-# if __name__ == "__main__":
-#     loop = asyncio.get_event_loop()
-#     loop.run_until_complete(main())

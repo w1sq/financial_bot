@@ -82,7 +82,8 @@ async def market_review_candles(tg_bot: TG_Bot):
 <b>{share["name"]}</b>
 
 Определён тип свечи: {custom_candle.type}
-Изменение цены: {percent_price_delta}%
+Длинна свечи: {round(custom_candle.length_perc, 2)}%
+Изменение цены со вчера: {percent_price_delta}%
 Объём: {volume_smile} {round(procent_volume*100, 2)}%
 Время: {candle.time.strftime("%d-%m-%Y")}
 Цена: {custom_candle.close} ₽"""
