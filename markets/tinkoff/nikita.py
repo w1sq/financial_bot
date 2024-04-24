@@ -101,7 +101,7 @@ async def analise_share(share: dict, purchases: dict, client: AsyncServices):
         print(e)
         return None
     share_status = False
-    if datetime.datetime.now().minute == 30:
+    if datetime.datetime.now().minute == 00:
         if len(local_data_bollinger) < StrategyConfig.bollinger_frame_count:
             local_data_bollinger.append(last_price)
         else:
@@ -142,16 +142,16 @@ async def analise_share(share: dict, purchases: dict, client: AsyncServices):
         )
         if quantity_lot > 0:
             last_price -= last_price % share["min_price_increment"]
-            async with AsyncRetryingClient(
-                Config.NIKITA_TOKEN, Config.RETRY_SETTINGS
-            ) as client:
+            try:
                 buy_trade = await buy_limit_order(
                     share["figi"], last_price, quantity_lot, client
                 )
-            purchases["orders"][share["ticker"]]["order_id"] = buy_trade.order_id
-            purchases["orders"][share["ticker"]]["lot"] = share["lot"]
-            purchases["available"] -= last_price * quantity_lot * share["lot"]
-            return f"СТРАТЕГИЯ НИКИТЫ ЗАЯВКА\n\nЗаявка на {share['ticker']} на сумму {last_price * quantity_lot * share['lot']}\n\n{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} по цене {last_price}\nКол-во: {quantity_lot * share['lot']}"
+                purchases["orders"][share["ticker"]]["order_id"] = buy_trade.order_id
+                purchases["orders"][share["ticker"]]["lot"] = share["lot"]
+                purchases["available"] -= last_price * quantity_lot * share["lot"]
+                return f"СТРАТЕГИЯ НИКИТЫ ЗАЯВКА\n\nЗаявка на {share['ticker']} на сумму {last_price * quantity_lot * share['lot']}\n\n{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} по цене {last_price}\nКол-во: {quantity_lot * share['lot']}"
+            except Exception as e:
+                print(e)
     return None
 
 
@@ -237,7 +237,7 @@ async def orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
             ):
                 if order.lots_executed > 0:
                     lots = purchases["orders"][ticker].get("lot", 1)
-                    purchase_text = f"Покупка {ticker} {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')} по цене {moneyvalue_to_float(order.average_position_price)} с коммисией {moneyvalue_to_float(order.executed_commission)}\nКол-во: {order.lots_executed*lots}"
+                    purchase_text = f"Покупка {ticker} {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')} по цене {moneyvalue_to_float(order.average_position_price)} с коммисией {moneyvalue_to_float(order.executed_commission)}\nКол-во: {order.lots_executed*lots}\nОбщая сумма: {moneyvalue_to_float(order.executed_order_price)}"
                     messages_to_send.append(
                         "СТРАТЕГИЯ НИКИТЫ ПОКУПКА\n\n" + purchase_text
                     )
@@ -289,9 +289,7 @@ async def orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
 
 async def stop_orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
     messages_to_send = []
-    async with AsyncRetryingClient(
-        Config.NIKITA_TOKEN, Config.RETRY_SETTINGS
-    ) as client:
+    async with AsyncClient(Config.NIKITA_TOKEN) as client:
         last_trades = await get_history(client)
         for ticker in purchases["orders"].keys():
             order_id = purchases["orders"][ticker].get("order_id")
@@ -331,7 +329,8 @@ async def stop_orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
                             "averaging": False,
                         }
             if (
-                purchases["orders"][ticker]["averaging"] is False
+                not stop_loss_order_id
+                and purchases["orders"][ticker]["averaging"] is False
                 and price_buy
                 and quantity
                 and purchases["orders"][ticker].get("lowest_price", 10e9)
@@ -406,19 +405,20 @@ async def update_lowest_prices_nikita(purchases: Dict[str, Dict]):
             await asyncio.sleep(1)
 
     async with AsyncClient(Config.READONLY_TOKEN) as client:
-        async for marketdata in client.market_data_stream.market_data_stream(
-            request_iterator()
-        ):
-            if marketdata.candle:
-                purchases["orders"][figi_to_ticker[marketdata.candle.figi]][
-                    "lowest_price"
-                ] = float(quotation_to_decimal(marketdata.candle.low))
+        try:
+            async for marketdata in client.market_data_stream.market_data_stream(
+                request_iterator()
+            ):
+                if marketdata.candle:
+                    purchases["orders"][figi_to_ticker[marketdata.candle.figi]][
+                        "lowest_price"
+                    ] = float(quotation_to_decimal(marketdata.candle.low))
+        except Exception as e:
+            print(e)
 
 
 async def market_review_nikita(tg_bot: TG_Bot, purchases: Dict[str, Dict]):
-    async with AsyncRetryingClient(
-        Config.NIKITA_TOKEN, Config.RETRY_SETTINGS
-    ) as client:
+    async with AsyncClient(Config.NIKITA_TOKEN) as client:
         shares = await get_shares(client)
         messages_to_send = []
         for share in shares:
