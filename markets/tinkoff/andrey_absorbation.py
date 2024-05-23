@@ -31,10 +31,10 @@ from markets.tinkoff.utils import (
 
 class StrategyConfig:
     minimum_day_volume = 200 * 10**6
-    two_day_take_profit = 2.5
-    two_day_stop_loss = 0.5
+    two_day_take_profit = 5
+    two_day_stop_loss = 1
     one_day_take_profit = 5
-    one_day_stop_loss = 1.5
+    one_day_stop_loss = 1
     dynamic_border = True  # статичные или динамические границы ордеров .. идея на потом
     # dynamic_border_mult 2,  # 1.25, # насколько двигаем границу, при достижении профита, .. идея на потом
     falling_indicator_frame_count = 5
@@ -110,13 +110,12 @@ async def analisys(
             min(StrategyConfig.money_in_order, purchases["available"])
             // (order_candle.close * share["lot"])
         )
-        print(order_candle.time, order_candle.type)
         if (
             prev_custom_candle.volume
             * share["lot"]
             * (prev_custom_candle.low + prev_custom_candle.length / 2)
         ) > StrategyConfig.minimum_day_volume:
-            print(order_candle.time, order_candle.type)
+            print(share["ticker"], order_candle.time, order_candle.type)
         if (
             quantity_lot > 0
             and buy
@@ -510,6 +509,7 @@ async def market_review_andrey(tg_bot: TG_Bot, purchases: Dict[str, Dict]):
                 from_=yesterday_6am_utc,
                 interval=CandleInterval.CANDLE_INTERVAL_DAY,
             ):
+                # print(candle.time)
                 message = await analisys(share, candle, purchases, buy=False)
                 if message is not None:
                     messages_to_send.append(message)

@@ -149,7 +149,7 @@ async def analise_share(share: dict, purchases: dict, client: AsyncServices):
                 purchases["orders"][share["ticker"]]["order_id"] = buy_trade.order_id
                 purchases["orders"][share["ticker"]]["lot"] = share["lot"]
                 purchases["available"] -= last_price * quantity_lot * share["lot"]
-                return f"СТРАТЕГИЯ НИКИТЫ ЗАЯВКА\n\nЗаявка на {share['ticker']} на сумму {last_price * quantity_lot * share['lot']}\n\n{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} по цене {last_price}\nКол-во: {quantity_lot * share['lot']}"
+                return f"СТРАТЕГИЯ НИКИТЫ v 1.1 ЗАЯВКА\n\nЗаявка на {share['ticker']} на сумму {last_price * quantity_lot * share['lot']}\n\n{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} по цене {last_price}\nКол-во: {quantity_lot * share['lot']}"
             except Exception as e:
                 print(e)
     return None
@@ -171,6 +171,12 @@ async def fill_data_nikita(purchases: dict):
                     "figi": share["figi"],
                     "averaging": False,
                 }
+            for key in ["lot", "min_price_increment", "figi", "averaging"]:
+                if key not in purchases["orders"][share["ticker"]]:
+                    if key == "averaging":
+                        purchases["orders"][share["ticker"]][key] = False
+                    else:
+                        purchases["orders"][share["ticker"]][key] = share[key]
             async for candle in client.get_all_candles(
                 figi=share["figi"],
                 from_=datetime.datetime.combine(
@@ -239,7 +245,7 @@ async def orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
                     lots = purchases["orders"][ticker].get("lot", 1)
                     purchase_text = f"Покупка {ticker} {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')} по цене {moneyvalue_to_float(order.average_position_price)} с коммисией {moneyvalue_to_float(order.executed_commission)}\nКол-во: {order.lots_executed*lots}\nОбщая сумма: {moneyvalue_to_float(order.executed_order_price)}"
                     messages_to_send.append(
-                        "СТРАТЕГИЯ НИКИТЫ ПОКУПКА\n\n" + purchase_text
+                        "СТРАТЕГИЯ НИКИТЫ v 1.1 ПОКУПКА\n\n" + purchase_text
                     )
                     take_profit_price = moneyvalue_to_float(
                         order.average_position_price
@@ -265,7 +271,7 @@ async def orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
                     purchases["orders"][ticker]["quantity"] = order.lots_executed
                 else:
                     messages_to_send.append(
-                        f"СТРАТЕГИЯ НИКИТЫ ОТМЕНА\n\nОтмена {ticker} {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')}"
+                        f"СТРАТЕГИЯ НИКИТЫ v 1.1 ОТМЕНА\n\nОтмена {ticker} {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')}"
                     )
                 if (
                     order.execution_report_status
@@ -299,6 +305,7 @@ async def stop_orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
             figi = purchases["orders"][ticker].get("figi")
             price_buy = purchases["orders"][ticker].get("price_buy", 0)
             quantity = purchases["orders"][ticker].get("quantity", 0)
+            purchase_text = purchases["orders"][ticker].get("order_data", "")
             if last_trades:
                 for last_trade in last_trades:
                     if (
@@ -307,7 +314,6 @@ async def stop_orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
                         == OperationType.OPERATION_TYPE_SELL
                         and last_trade.state == OperationState.OPERATION_STATE_EXECUTED
                     ):
-                        purchase_text = purchases["orders"][ticker].pop("order_data")
                         order_id = purchases["orders"][ticker].pop("order_id")
                         sell_price = moneyvalue_to_float(last_trade.price)
                         profit = last_trade.quantity * (sell_price - price_buy)
@@ -315,7 +321,7 @@ async def stop_orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
                             last_trade.payment
                         )
                         messages_to_send.append(
-                            f"СТРАТЕГИЯ НИКИТЫ ПРОДАЖА\n\n{purchase_text}\n\nПродажа {(last_trade.date + datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M')} по цене {sell_price}\n\nПрибыль: {round(profit, 2)}"
+                            f"СТРАТЕГИЯ НИКИТЫ v 1.1 ПРОДАЖА\n\n{purchase_text}\n\nПродажа {(last_trade.date + datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M')} по цене {sell_price}\n\nПрибыль: {round(profit, 2)}"
                         )
                         purchases["orders"][ticker] = {
                             "last_sell": (
@@ -334,11 +340,15 @@ async def stop_orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
                 and price_buy
                 and quantity
                 and purchases["orders"][ticker].get("lowest_price", 10e9)
-                < price_buy * (1 - StrategyConfig.stop_loss / 100)
+                < price_buy * (1 - StrategyConfig.stop_loss / 200)
             ):
+                continue
                 trade = await buy_market_order(figi, quantity, client)
+                purchases["available"] -= moneyvalue_to_float(trade.total_order_amount)
+                purchases["orders"][ticker]["quantity"] = quantity * 2
+                purchases["orders"][ticker]["averaging"] = True
                 messages_to_send.append(
-                    f"СТРАТЕГИЯ НИКИТЫ ПОКУПКА\n\n{purchase_text}\n\nУсреднение на сумму {moneyvalue_to_float(trade.total_order_amount)} по цене {moneyvalue_to_float(trade.executed_order_price)}\nКоличество: {quantity*purchases['orders'][ticker].get('lot',0)}"
+                    f"СТРАТЕГИЯ НИКИТЫ v 1.1 ПОКУПКА\n\n{purchase_text}\n\nУсреднение на сумму {moneyvalue_to_float(trade.total_order_amount)} по цене {moneyvalue_to_float(trade.executed_order_price)}\nКоличество: {quantity*purchases['orders'][ticker].get('lot',0)}"
                 )
                 try:
                     await client.stop_orders.cancel_stop_order(
@@ -348,7 +358,7 @@ async def stop_orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
                 except Exception as e:
                     print(e)
                 take_profit_price = price_buy * (1 + StrategyConfig.take_profit / 100)
-                stop_loss_price = price_buy * (1 - (StrategyConfig.stop_loss * 2) / 100)
+                stop_loss_price = price_buy * (1 - StrategyConfig.stop_loss / 100)
                 take_profit_price -= (
                     take_profit_price
                     % purchases["orders"][ticker]["min_price_increment"]
@@ -369,7 +379,6 @@ async def stop_orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
                     + stop_loss_response.stop_order_id
                 )
                 purchases["orders"][ticker]["order_id"] = stop_orders_id_string
-                purchases["orders"][ticker]["averaging"] = True
 
     for message in messages_to_send:
         await tg_bot.send_signal(
@@ -414,8 +423,7 @@ async def update_lowest_prices_nikita(purchases: Dict[str, Dict]):
                         "lowest_price"
                     ] = float(quotation_to_decimal(marketdata.candle.low))
         except Exception as e:
-            print(e)
-
+            print("TEST", e)
 
 async def market_review_nikita(tg_bot: TG_Bot, purchases: Dict[str, Dict]):
     async with AsyncClient(Config.NIKITA_TOKEN) as client:

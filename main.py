@@ -1,32 +1,31 @@
 """Main script for project startup"""
 
+import asyncio
 import json
 from typing import Dict
 
-import asyncio
 import aiogram
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from markets.tinkoff.nikita import (
-    market_review_nikita,
-    orders_check_nikita,
-    stop_orders_check_nikita,
-    fill_data_nikita,
-    update_lowest_prices_nikita,
-)
-
+from bot import TG_Bot
+from config import Config
+from db import DB
+from db.storage import UserStorage
 from markets.tinkoff.andrey_absorbation import (
-    market_review_andrey,
     fill_market_data_andrey,
+    market_review_andrey,
     orders_check_andrey,
     stop_orders_check_andrey,
 )
 from markets.tinkoff.andrey_candles import market_review_candles
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
-from bot import TG_Bot
-from db import DB
-from db.storage import UserStorage
-from config import Config
+from markets.tinkoff.nikita import (
+    fill_data_nikita,
+    market_review_nikita,
+    orders_check_nikita,
+    stop_orders_check_nikita,
+    update_lowest_prices_nikita,
+)
+from markets.tinkoff.utils import update_purchases
 
 
 def serialize_purchases(purchases: Dict[str, Dict]):
@@ -45,9 +44,10 @@ class Launcher:
     """Class for launching all project subprocesses together"""
 
     def __init__(self):
-        self.tg_bot: aiogram.Bot = None
-        self.user_storage: UserStorage = None
-        self.db: DB = None
+        self.tg_bot: TG_Bot
+        self.user_storage: UserStorage
+        self.db: DB
+        self.tokens = {"nikita": Config.NIKITA_TOKEN, "andrey": Config.ANDREY_TOKEN}
         self.strategies_data = (
             deserialize_purchases()
         )  # {"nikita": { "available": 20000, "orders": {} },"andrey": { "available": 30000, "orders": {} },"george": {}}
@@ -133,6 +133,12 @@ class Launcher:
             "cron",
             second="30",
             args=[self.strategies_data],
+        )
+        scheduler.add_job(
+            update_purchases,
+            "cron",
+            hour="1",
+            args=[self.tokens, self.strategies_data],
         )
         scheduler.start()
 

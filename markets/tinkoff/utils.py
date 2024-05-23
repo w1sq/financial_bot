@@ -23,14 +23,14 @@ from tinkoff.invest.services import InstrumentsService
 from tinkoff.invest.utils import quotation_to_decimal
 
 
-async def get_shares(client: AsyncClient, tickers: List[str] = None) -> List[Dict]:
+async def get_shares(client: AsyncServices, tickers: List[str] = []) -> List[Dict]:
     """Get shares from Tinkoff API by tickers or all of them"""
     instruments: InstrumentsService = client.instruments
     shares = []
     for method in ["shares"]:
         for item in (await getattr(instruments, method)()).instruments:
             if item.exchange in ["MOEX", "MOEX_EVENING_WEEKEND"] and (
-                tickers is None or item.ticker in tickers
+                not tickers or item.ticker in tickers
             ):
                 shares.append(
                     {
@@ -58,21 +58,21 @@ async def get_shares(client: AsyncClient, tickers: List[str] = None) -> List[Dic
     return shares
 
 
-async def get_account_id(client: AsyncClient):
+async def get_account_id(client: AsyncServices):
     accounts = await client.users.get_accounts()
     return accounts.accounts[0].id
 
 
 async def sell_market_order(
     figi: str,
-    quantity: int,
-    client: AsyncClient,
+    lots_quantity: int,
+    client: AsyncServices,
 ) -> PostOrderResponse:
     account_id = await get_account_id(client)
     order: PostOrderResponse = await client.orders.post_order(
         instrument_id=figi,
         account_id=account_id,
-        quantity=quantity,
+        quantity=lots_quantity,
         direction=OrderDirection.ORDER_DIRECTION_SELL,
         order_type=OrderType.ORDER_TYPE_MARKET,
         order_id=str(datetime.datetime.utcnow().timestamp()),
@@ -85,7 +85,7 @@ async def sell_market_order(
 async def buy_market_order(
     figi: str,
     quantity: int,
-    client: AsyncClient,
+    client: AsyncServices,
 ) -> PostOrderResponse:
     account_id = await get_account_id(client)
     order: PostOrderResponse = await client.orders.post_order(
@@ -105,7 +105,7 @@ async def buy_limit_order(
     figi: str,
     price: float,
     quantity: int,
-    client: AsyncClient,
+    client: AsyncServices,
 ) -> PostOrderResponse:
     account_id = await get_account_id(client)
     order: PostOrderResponse = await client.orders.post_order(
@@ -126,7 +126,7 @@ async def place_take_profit_sell(
     figi: str,
     take_profit_price: float,
     quantity: int,
-    client: AsyncClient,
+    client: AsyncServices,
 ):
     account_id = await get_account_id(client)
     take_profit_response: PostStopOrderResponse = (
@@ -148,7 +148,7 @@ async def place_stop_loss_sell(
     figi: str,
     stop_loss_price: float,
     quantity: int,
-    client: AsyncClient,
+    client: AsyncServices,
 ):
     account_id = await get_account_id(client)
     stop_loss_response: PostStopOrderResponse = (
@@ -170,7 +170,7 @@ async def place_sell_stop_orders(
     take_profit_price: float,
     stop_loss_price: float,
     quantity: int,
-    client: AsyncClient,
+    client: AsyncServices,
 ):
     account_id = await get_account_id(client)
     take_profit_response: PostStopOrderResponse = (
@@ -188,6 +188,7 @@ async def place_sell_stop_orders(
     stop_loss_response: PostStopOrderResponse = (
         await client.stop_orders.post_stop_order(
             quantity=quantity,
+            price=float_to_quotation(stop_loss_price),
             stop_price=float_to_quotation(stop_loss_price),
             direction=StopOrderDirection.STOP_ORDER_DIRECTION_SELL,
             account_id=account_id,
@@ -204,7 +205,7 @@ async def place_buy_stop_orders(
     take_profit_price: float,
     stop_loss_price: float,
     quantity: int,
-    client: AsyncClient,
+    client: AsyncServices,
 ):
     account_id = await get_account_id(client)
     take_profit_response: PostStopOrderResponse = (
@@ -263,7 +264,7 @@ async def get_last_price(figi: str, client: AsyncServices) -> float:
 
 async def get_history(client: AsyncServices) -> List[Operation]:
     account_id = await get_account_id(client)
-    ten_min_ago = datetime.datetime.now(pytz.utc) - datetime.timedelta(hours=2)
+    ten_min_ago = datetime.datetime.now(pytz.utc) - datetime.timedelta(hours=10)
     try:
         history = await client.operations.get_operations(
             account_id=account_id,
@@ -273,3 +274,33 @@ async def get_history(client: AsyncServices) -> List[Operation]:
         return history.operations
     except tinkoff.invest.exceptions.AioRequestError:
         return []
+
+
+async def update_purchases(tokens: Dict[str, str], purchases: Dict[str, Dict]):
+    for name, token in tokens.items():
+        orders = purchases[name]["orders"]
+        async with AsyncClient(token) as client:
+            acc_id = await get_account_id(client)
+            portfolio = await client.operations.get_portfolio(account_id=acc_id)
+            positions = {}
+            for position in portfolio.positions:
+                if position.instrument_type == "share":
+                    positions[position.figi] = position
+
+            for ticker, purchase in orders.items():
+                if "order_id" in purchase and purchase["figi"] not in positions:
+                    keys = [
+                        "last_sell",
+                        "min_price_increment",
+                        "figi",
+                        "lot",
+                        "lowest_price",
+                    ]
+                    orders[ticker] = {
+                        key: purchase[key] for key in keys if key in orders[ticker]
+                    }
+                    orders[ticker]["averaging"] = False
+
+            purchases[name]["available"] = moneyvalue_to_float(
+                portfolio.total_amount_currencies
+            )
