@@ -79,26 +79,15 @@ def strategy(last_price: float, ticker: str) -> bool:
     rsi = calculate_rsi(pandas.Series(local_data_rsi))
     if (
         last_price
-        < (
+        > (
             avarege
-            - StrategyConfig.bolinger_mult
-            * sko
-            * StrategyConfig.strategy_bollinger_range
-        )
-        and rsi <= StrategyConfig.rsi_treshold_buy
-    ):
-        return "BUY"
-    elif (
-        last_price
-        < (
-            avarege
-            - StrategyConfig.bolinger_mult
+            + StrategyConfig.bolinger_mult
             * sko
             * StrategyConfig.strategy_bollinger_range
         )
         and rsi <= StrategyConfig.rsi_treshold_sell
     ):
-        return "SELL"
+        return True
     return False
 
 
@@ -155,16 +144,10 @@ async def analise_share(share: dict, purchases: dict, client: AsyncServices):
         if quantity_lot > 0:
             last_price -= last_price % share["min_price_increment"]
             try:
-                if share_status == "BUY":
-                    trade = await buy_limit_order(
-                        share["figi"], last_price, quantity_lot, client
-                    )
-                    purchases["orders"][share["ticker"]]["type"] = "long"
-                else:
-                    trade = await sell_limit_order(
-                        share["figi"], last_price, quantity_lot, client
-                    )
-                    purchases["orders"][share["ticker"]]["type"] = "short"
+                trade = await sell_limit_order(
+                    share["figi"], last_price, quantity_lot, client
+                )
+                purchases["orders"][share["ticker"]]["type"] = "short"
                 purchases["orders"][share["ticker"]]["order_id"] = trade.order_id
                 purchases["orders"][share["ticker"]]["lot"] = share["lot"]
                 purchases["available"] -= last_price * quantity_lot * share["lot"]
@@ -263,62 +246,33 @@ async def orders_check_nikita_shorts(tg_bot: TG_Bot, purchases: dict):
             ):
                 if order.lots_executed > 0:
                     lots = purchases["orders"][ticker].get("lot", 1)
-                    if purchases["orders"][ticker].get("type") == "long":
-                        purchase_text = f"Покупка {ticker} {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')} по цене {moneyvalue_to_float(order.average_position_price)} с коммисией {moneyvalue_to_float(order.executed_commission)}\nКол-во: {order.lots_executed*lots}\nОбщая сумма: {moneyvalue_to_float(order.executed_order_price)}"
-                        messages_to_send.append(
-                            "СТРАТЕГИЯ НИКИТЫ v 1.2 ПОКУПКА #long\n\n" + purchase_text
+                    purchase_text = f"Продажа {ticker} {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')} по цене {moneyvalue_to_float(order.average_position_price)} с коммисией {moneyvalue_to_float(order.executed_commission)}\nКол-во: {order.lots_executed*lots}\nОбщая сумма: {moneyvalue_to_float(order.executed_order_price)}"
+                    messages_to_send.append(
+                        "СТРАТЕГИЯ НИКИТЫ v 1.2 ПРОДАЖА #short\n\n" + purchase_text
+                    )
+                    take_profit_price = moneyvalue_to_float(
+                        order.average_position_price
+                    ) * (1 - StrategyConfig.take_profit / 100)
+                    stop_loss_price = moneyvalue_to_float(
+                        order.average_position_price
+                    ) * (1 + StrategyConfig.stop_loss / 100)
+                    take_profit_price -= (
+                        take_profit_price
+                        % purchases["orders"][ticker]["min_price_increment"]
+                    )
+                    stop_loss_price -= (
+                        stop_loss_price
+                        % purchases["orders"][ticker]["min_price_increment"]
+                    )
+                    take_profit_response, stop_loss_response = (
+                        await place_buy_stop_orders(
+                            order.figi,
+                            take_profit_price,
+                            stop_loss_price,
+                            order.lots_executed,
+                            client,
                         )
-                        take_profit_price = moneyvalue_to_float(
-                            order.average_position_price
-                        ) * (1 + StrategyConfig.take_profit / 100)
-                        stop_loss_price = moneyvalue_to_float(
-                            order.average_position_price
-                        ) * (1 - StrategyConfig.stop_loss / 100)
-                        take_profit_price -= (
-                            take_profit_price
-                            % purchases["orders"][ticker]["min_price_increment"]
-                        )
-                        stop_loss_price -= (
-                            stop_loss_price
-                            % purchases["orders"][ticker]["min_price_increment"]
-                        )
-                        take_profit_response, stop_loss_response = (
-                            await place_sell_stop_orders(
-                                order.figi,
-                                take_profit_price,
-                                stop_loss_price,
-                                order.lots_executed,
-                                client,
-                            )
-                        )
-                    else:
-                        purchase_text = f"Продажа {ticker} {(order.order_date+ datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')} по цене {moneyvalue_to_float(order.average_position_price)} с коммисией {moneyvalue_to_float(order.executed_commission)}\nКол-во: {order.lots_executed*lots}\nОбщая сумма: {moneyvalue_to_float(order.executed_order_price)}"
-                        messages_to_send.append(
-                            "СТРАТЕГИЯ НИКИТЫ v 1.2 ПРОДАЖА #short\n\n" + purchase_text
-                        )
-                        take_profit_price = moneyvalue_to_float(
-                            order.average_position_price
-                        ) * (1 - StrategyConfig.take_profit / 100)
-                        stop_loss_price = moneyvalue_to_float(
-                            order.average_position_price
-                        ) * (1 + StrategyConfig.stop_loss / 100)
-                        take_profit_price -= (
-                            take_profit_price
-                            % purchases["orders"][ticker]["min_price_increment"]
-                        )
-                        stop_loss_price -= (
-                            stop_loss_price
-                            % purchases["orders"][ticker]["min_price_increment"]
-                        )
-                        take_profit_response, stop_loss_response = (
-                            await place_buy_stop_orders(
-                                order.figi,
-                                take_profit_price,
-                                stop_loss_price,
-                                order.lots_executed,
-                                client,
-                            )
-                        )
+                    )
                     stop_orders_id_string = str(
                         take_profit_response.stop_order_id
                         + "|"
@@ -380,16 +334,10 @@ async def stop_orders_check_nikita_shorts(tg_bot: TG_Bot, purchases: dict):
                         purchases["available"] += moneyvalue_to_float(
                             last_trade.payment
                         )
-                        if purchases["orders"][ticker].get("type") == "long":
-                            profit = last_trade.quantity * (sell_price - price_buy)
-                            messages_to_send.append(
-                                f"СТРАТЕГИЯ НИКИТЫ v 1.2 ПРОДАЖА\n\n{purchase_text}\n\nПродажа {(last_trade.date + datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M')} по цене {sell_price}\n\nПрибыль: {round(profit, 2)}"
-                            )
-                        else:
-                            profit = last_trade.quantity * (price_buy - sell_price)
-                            messages_to_send.append(
-                                f"СТРАТЕГИЯ НИКИТЫ v 1.2 ПОКУПКА\n\n{purchase_text}\n\nПокупка {(last_trade.date + datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M')} по цене {sell_price}\n\nПрибыль: {round(profit, 2)}"
-                            )
+                        profit = last_trade.quantity * (price_buy - sell_price)
+                        messages_to_send.append(
+                            f"СТРАТЕГИЯ НИКИТЫ v 1.2 ПОКУПКА\n\n{purchase_text}\n\nПокупка {(last_trade.date + datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M')} по цене {sell_price}\n\nПрибыль: {round(profit, 2)}"
+                        )
                         purchases["orders"][ticker] = {
                             "last_sell": (
                                 last_trade.date + datetime.timedelta(hours=3)
