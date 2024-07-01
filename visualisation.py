@@ -49,10 +49,16 @@ async def main():
         #         order = await sell_market_order(share["figi"], 74, client)
         #         print(order)
 
+        pprint(await get_shares(client))
+
         acc_id = await get_account_id(client)
         # print(acc_id)
 
-        # pprint(await get_history(client))
+        # trades = await get_history(client)
+        # pprint(trades)
+        # for trade in trades:
+        #     if trade.operation_type != 19:
+        #         pprint(trade)
         # print(await client.orders.get_orders(account_id=acc_id))
 
         # await client.stop_orders.cancel_stop_order(
@@ -73,10 +79,10 @@ async def main():
         # )
         # print(stop_loss_response)
 
-        # await sell_market_order("BBG00ZHCX1X2", 736, client)
+        # await sell_market_order("BBG00F9XX7H4", 46, client)
         # pprint(await client.stop_orders.get_stop_orders(account_id=acc_id))
 
-        pprint(await client.operations.get_portfolio(account_id=acc_id))
+        # pprint(await client.operations.get_portfolio(account_id=acc_id))
 
 
 if __name__ == "__main__":

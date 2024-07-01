@@ -29,9 +29,11 @@ async def get_shares(client: AsyncServices, tickers: List[str] = []) -> List[Dic
     shares = []
     for method in ["shares"]:
         for item in (await getattr(instruments, method)()).instruments:
-            if item.exchange in ["MOEX", "MOEX_EVENING_WEEKEND"] and (
-                not tickers or item.ticker in tickers
-            ):
+            if item.exchange in [
+                "MOEX",
+                "MOEX_WEEKEND",
+                "MOEX_EVENING_WEEKEND",
+            ] and (not tickers or item.ticker in tickers):
                 shares.append(
                     {
                         "name": item.name,
@@ -114,6 +116,27 @@ async def buy_limit_order(
         price=float_to_quotation(price),
         quantity=quantity,
         direction=OrderDirection.ORDER_DIRECTION_BUY,
+        order_type=OrderType.ORDER_TYPE_LIMIT,
+        order_id=str(datetime.datetime.utcnow().timestamp()),
+    )
+    if order.execution_report_status not in (1, 4):
+        print(figi, order)
+    return order
+
+
+async def sell_limit_order(
+    figi: str,
+    price: float,
+    quantity: int,
+    client: AsyncServices,
+) -> PostOrderResponse:
+    account_id = await get_account_id(client)
+    order: PostOrderResponse = await client.orders.post_order(
+        instrument_id=figi,
+        account_id=account_id,
+        price=float_to_quotation(price),
+        quantity=quantity,
+        direction=OrderDirection.ORDER_DIRECTION_SELL,
         order_type=OrderType.ORDER_TYPE_LIMIT,
         order_id=str(datetime.datetime.utcnow().timestamp()),
     )
@@ -264,7 +287,7 @@ async def get_last_price(figi: str, client: AsyncServices) -> float:
 
 async def get_history(client: AsyncServices) -> List[Operation]:
     account_id = await get_account_id(client)
-    ten_min_ago = datetime.datetime.now(pytz.utc) - datetime.timedelta(hours=10)
+    ten_min_ago = datetime.datetime.now(pytz.utc) - datetime.timedelta(hours=150)
     try:
         history = await client.operations.get_operations(
             account_id=account_id,

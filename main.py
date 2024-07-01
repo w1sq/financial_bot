@@ -4,7 +4,6 @@ import asyncio
 import json
 from typing import Dict
 
-import aiogram
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot import TG_Bot
@@ -23,7 +22,12 @@ from markets.tinkoff.nikita import (
     market_review_nikita,
     orders_check_nikita,
     stop_orders_check_nikita,
-    update_lowest_prices_nikita,
+)
+from markets.tinkoff.nikita_shorts import (
+    fill_data_nikita_shorts,
+    market_review_nikita_shorts,
+    orders_check_nikita_shorts,
+    stop_orders_check_nikita_shorts,
 )
 from markets.tinkoff.utils import update_purchases
 
@@ -47,10 +51,14 @@ class Launcher:
         self.tg_bot: TG_Bot
         self.user_storage: UserStorage
         self.db: DB
-        self.tokens = {"nikita": Config.NIKITA_TOKEN, "andrey": Config.ANDREY_TOKEN}
+        self.tokens = {
+            "nikita": Config.NIKITA_TOKEN,
+            "andrey": Config.ANDREY_TOKEN,
+            "nikita_shorts": Config.NIKITA_SHORTS_TOKEN,
+        }
         self.strategies_data = (
             deserialize_purchases()
-        )  # {"nikita": { "available": 20000, "orders": {} },"andrey": { "available": 30000, "orders": {} },"george": {}}
+        )  # {"nikita": { "available": 45000, "orders": {} },"andrey": { "available": 30000, "orders": {} },"george": {}}
 
     async def init_db(self):
         """Database startup"""
@@ -101,6 +109,30 @@ class Launcher:
             second="00",
             args=[self.tg_bot, self.strategies_data["nikita"]],
         )
+
+        scheduler.add_job(
+            market_review_nikita_shorts,
+            "cron",
+            hour="10-23",
+            second="00",
+            day_of_week="mon-fri",
+            args=[self.tg_bot, self.strategies_data["nikita_shorts"]],
+        )
+        scheduler.add_job(
+            orders_check_nikita_shorts,
+            "cron",
+            hour="10-23",
+            second="00",
+            args=[self.tg_bot, self.strategies_data["nikita_shorts"]],
+        )
+        scheduler.add_job(
+            stop_orders_check_nikita_shorts,
+            "cron",
+            hour="10-23",
+            second="00",
+            args=[self.tg_bot, self.strategies_data["nikita_shorts"]],
+        )
+
         scheduler.add_job(
             market_review_andrey,
             "cron",
@@ -122,6 +154,7 @@ class Launcher:
             hour="10-23",
             args=[self.tg_bot, self.strategies_data["andrey"]],
         )
+
         scheduler.add_job(
             market_review_candles,
             "cron",
@@ -142,12 +175,13 @@ class Launcher:
         )
         scheduler.start()
 
+        await fill_data_nikita_shorts(self.strategies_data["nikita_shorts"])
         await fill_data_nikita(self.strategies_data["nikita"])
         await fill_market_data_andrey(self.strategies_data["andrey"])
         tasks = [
             # market_review_andrey(self.tg_bot, self.strategies_data["andrey"]),
             # market_review_candles(self.tg_bot),
-            update_lowest_prices_nikita(self.strategies_data["nikita"]),
+            # update_lowest_prices_nikita(self.strategies_data["nikita"]),
             self.main(),
         ]
         await asyncio.gather(*tasks)
