@@ -4,6 +4,7 @@ import asyncio
 import json
 from typing import Dict
 
+import gspread
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot import TG_Bot
@@ -60,6 +61,9 @@ class Launcher:
             deserialize_purchases()
         )  # {"nikita": { "available": 45000, "orders": {} },"andrey": { "available": 30000, "orders": {} },"george": {}}
 
+        google_client = gspread.service_account(filename="service_account.json")
+        self.nikita_table = google_client.open_by_key(Config.NIKITA_TABLE_ID)
+
     async def init_db(self):
         """Database startup"""
         self.db = DB(
@@ -100,16 +104,15 @@ class Launcher:
             "cron",
             hour="10-23",
             second="00",
-            args=[self.tg_bot, self.strategies_data["nikita"]],
+            args=[self.nikita_table, self.tg_bot, self.strategies_data["nikita"]],
         )
         scheduler.add_job(
             stop_orders_check_nikita,
             "cron",
             hour="10-23",
             second="00",
-            args=[self.tg_bot, self.strategies_data["nikita"]],
+            args=[self.nikita_table, self.tg_bot, self.strategies_data["nikita"]],
         )
-
         scheduler.add_job(
             market_review_nikita_shorts,
             "cron",
@@ -132,7 +135,6 @@ class Launcher:
             second="00",
             args=[self.tg_bot, self.strategies_data["nikita_shorts"]],
         )
-
         scheduler.add_job(
             market_review_andrey,
             "cron",
@@ -179,8 +181,6 @@ class Launcher:
         await fill_data_nikita(self.strategies_data["nikita"])
         await fill_market_data_andrey(self.strategies_data["andrey"])
         tasks = [
-            # market_review_andrey(self.tg_bot, self.strategies_data["andrey"]),
-            # market_review_candles(self.tg_bot),
             # update_lowest_prices_nikita(self.strategies_data["nikita"]),
             self.main(),
         ]

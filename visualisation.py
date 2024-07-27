@@ -40,11 +40,11 @@ def float_to_quotation(value):
 
 async def main():
     async with AsyncClient(Config.NIKITA_SHORTS_TOKEN) as client:
-        shares = await get_shares(client)
-        for share in shares:
-            if share["ticker"] in ["ELFV"]:
-                order = await sell_market_order(share["figi"], 17, client)
-                print(order)
+        # shares = await get_shares(client)
+        # for share in shares:
+        #     if share["ticker"] in ["ELFV"]:
+        #         order = await sell_market_order(share["figi"], 17, client)
+        #         print(order)
 
         # pprint(await get_shares(client))
 
@@ -77,9 +77,10 @@ async def main():
         # print(stop_loss_response)
 
         # await sell_market_order("BBG00F9XX7H4", 46, client)
-        pprint(await client.stop_orders.get_stop_orders(account_id=acc_id))
+        # pprint(await client.stop_orders.get_stop_orders(account_id=acc_id))
 
         pprint(await client.operations.get_portfolio(account_id=acc_id))
+        pprint(await client.users.get_margin_attributes(account_id=acc_id))
 
 
 if __name__ == "__main__":

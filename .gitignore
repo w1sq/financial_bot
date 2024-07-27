@@ -1,5 +1,7 @@
 /config.py
+results_parser/
 maxim/
+/service_account.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

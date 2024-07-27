@@ -49,8 +49,8 @@ class StrategyConfig:
     stop_loss = 1
 
 
-data_bollinger: Dict[str, List[float]] = {}
-data_rsi: Dict[str, List[float]] = {}
+data_bollinger_shorts: Dict[str, List[float]] = {}
+data_rsi_shorts: Dict[str, List[float]] = {}
 
 
 def calculate_bollinger_bands(data: pandas.Series, window=20) -> Tuple[float, float]:
@@ -71,8 +71,8 @@ def calculate_rsi(data: pandas.Series, period=StrategyConfig.rsi_count_frame) ->
 
 
 def strategy(last_price: float, ticker: str) -> bool:
-    local_data_bollinger = data_bollinger[ticker]
-    local_data_rsi = data_rsi[ticker]
+    local_data_bollinger = data_bollinger_shorts[ticker]
+    local_data_rsi = data_rsi_shorts[ticker]
     avarege, sko = calculate_bollinger_bands(pandas.Series(local_data_bollinger))
     if len(local_data_rsi) < StrategyConfig.rsi_count_frame:
         return False
@@ -85,15 +85,16 @@ def strategy(last_price: float, ticker: str) -> bool:
             * sko
             * StrategyConfig.strategy_bollinger_range
         )
-        and rsi <= StrategyConfig.rsi_treshold_sell
+        and rsi >= StrategyConfig.rsi_treshold_sell
     ):
+        print(ticker + "strategy")
         return True
     return False
 
 
 async def analise_share(share: dict, purchases: dict, client: AsyncServices):
-    local_data_bollinger = data_bollinger.get(share["ticker"])
-    local_data_rsi = data_rsi.get(share["ticker"])
+    local_data_bollinger = data_bollinger_shorts.get(share["ticker"])
+    local_data_rsi = data_rsi_shorts.get(share["ticker"])
     if not local_data_bollinger or not local_data_rsi:
         return None
     try:
@@ -138,12 +139,14 @@ async def analise_share(share: dict, purchases: dict, client: AsyncServices):
             )
         )
     ):
+        print(share["ticker"] + "buying")
         quantity_lot = int(
             min(10000, purchases["available"]) // (last_price * share["lot"])
         )
         if quantity_lot > 0:
             last_price -= last_price % share["min_price_increment"]
             try:
+                print(share["ticker"], last_price, quantity_lot)
                 trade = await sell_limit_order(
                     share["figi"], last_price, quantity_lot, client
                 )
@@ -159,12 +162,12 @@ async def analise_share(share: dict, purchases: dict, client: AsyncServices):
 
 async def fill_data_nikita_shorts(purchases: dict):
     async with AsyncRetryingClient(
-        Config.NIKITA_SHORTS_TOKEN, Config.RETRY_SETTINGS
+        Config.ANDREY_TOKEN, Config.RETRY_SETTINGS
     ) as client:
         shares = await get_shares(client)
         for share in shares:
-            data_bollinger[share["ticker"]] = []
-            data_rsi[share["ticker"]] = []
+            data_bollinger_shorts[share["ticker"]] = []
+            data_rsi_shorts[share["ticker"]] = []
         for share in shares:
             if share["ticker"] not in purchases["orders"].keys():
                 purchases["orders"][share["ticker"]] = {
@@ -185,15 +188,15 @@ async def fill_data_nikita_shorts(purchases: dict):
                     datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc),
                     datetime.time(6, 0),
                 ).replace(tzinfo=datetime.timezone.utc)
-                - datetime.timedelta(days=6),
+                - datetime.timedelta(days=3),
                 interval=CandleInterval.CANDLE_INTERVAL_1_MIN,
             ):
                 await analise_historic_candle(candle, share)
 
 
 async def analise_historic_candle(candle: HistoricCandle, share: dict):
-    local_data_bollinger = data_bollinger[share["ticker"]]
-    local_data_rsi = data_rsi[share["ticker"]]
+    local_data_bollinger = data_bollinger_shorts[share["ticker"]]
+    local_data_rsi = data_rsi_shorts[share["ticker"]]
     last_price = float(quotation_to_decimal(candle.close))
     share_status = False
     # print(candle.time + datetime.timedelta(hours=3), end="")
@@ -203,19 +206,19 @@ async def analise_historic_candle(candle: HistoricCandle, share: dict):
         else:
             local_data_bollinger.pop(0)
             local_data_bollinger.append(last_price)
-            share_status = strategy(last_price, share["ticker"])
+            # share_status = strategy(last_price, share["ticker"])
             # print(share["ticker"], candle.time + datetime.timedelta(hours=3))
         if len(local_data_rsi) < StrategyConfig.rsi_count_frame * 10:
             local_data_rsi.append(last_price)
         else:
             local_data_rsi.pop(0)
             local_data_rsi.append(last_price)
-            share_status = strategy(last_price, share["ticker"])
+            # share_status = strategy(last_price, share["ticker"])
             # print(share["ticker"], candle.time + datetime.timedelta(hours=3))
     elif len(local_data_bollinger) > 0:
         local_data_bollinger[-1] = last_price
         local_data_rsi[-1] = last_price
-        share_status = strategy(last_price, share["ticker"])
+        # share_status = strategy(last_price, share["ticker"])
         # print(share["ticker"], candle.time + datetime.timedelta(hours=3))
     else:
         return None
@@ -226,7 +229,7 @@ async def analise_historic_candle(candle: HistoricCandle, share: dict):
 async def orders_check_nikita_shorts(tg_bot: TG_Bot, purchases: dict):
     messages_to_send = []
     async with AsyncRetryingClient(
-        Config.NIKITA_SHORTS_TOKEN, Config.RETRY_SETTINGS
+        Config.ANDREY_TOKEN, Config.RETRY_SETTINGS
     ) as client:
         for ticker in purchases["orders"].keys():
             order_id = purchases["orders"][ticker].get("order_id", None)
@@ -310,7 +313,7 @@ async def orders_check_nikita_shorts(tg_bot: TG_Bot, purchases: dict):
 
 async def stop_orders_check_nikita_shorts(tg_bot: TG_Bot, purchases: dict):
     messages_to_send = []
-    async with AsyncClient(Config.NIKITA_SHORTS_TOKEN) as client:
+    async with AsyncClient(Config.ANDREY_TOKEN) as client:
         last_trades = await get_history(client)
         for ticker in purchases["orders"].keys():
             order_id = purchases["orders"][ticker].get("order_id")
@@ -326,7 +329,7 @@ async def stop_orders_check_nikita_shorts(tg_bot: TG_Bot, purchases: dict):
                     if (
                         last_trade.figi == figi
                         and last_trade.operation_type
-                        == OperationType.OPERATION_TYPE_SELL
+                        == OperationType.OPERATION_TYPE_BUY
                         and last_trade.state == OperationState.OPERATION_STATE_EXECUTED
                     ):
                         order_id = purchases["orders"][ticker].pop("order_id")
@@ -442,7 +445,7 @@ async def update_lowest_prices_nikita(purchases: Dict[str, Dict]):
 
 
 async def market_review_nikita_shorts(tg_bot: TG_Bot, purchases: Dict[str, Dict]):
-    async with AsyncClient(Config.NIKITA_SHORTS_TOKEN) as client:
+    async with AsyncClient(Config.ANDREY_TOKEN) as client:
         shares = await get_shares(client)
         messages_to_send = []
         for share in shares:

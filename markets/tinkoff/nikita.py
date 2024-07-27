@@ -3,6 +3,7 @@ import asyncio
 from typing import List, Dict, Tuple
 
 import pandas
+from gspread.spreadsheet import Spreadsheet
 from tinkoff.invest.retrying.aio.client import AsyncRetryingClient
 from tinkoff.invest.exceptions import AioRequestError
 from tinkoff.invest.async_services import AsyncServices
@@ -26,13 +27,15 @@ from bot import TG_Bot
 from config import Config
 from markets.tinkoff.utils import (
     get_shares,
-    get_history,
+    buy_limit_order,
+    place_stop_loss_sell,
+    place_sell_stop_orders,
+    buy_market_order,
+    place_take_profit_sell,
+    moneyvalue_to_float,
     get_account_id,
     get_last_price,
-    buy_limit_order,
-    buy_market_order,
-    moneyvalue_to_float,
-    place_sell_stop_orders,
+    get_history,
 )
 
 
@@ -182,7 +185,7 @@ async def fill_data_nikita(purchases: dict):
                     datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc),
                     datetime.time(6, 0),
                 ).replace(tzinfo=datetime.timezone.utc)
-                - datetime.timedelta(days=6),
+                - datetime.timedelta(days=3),
                 interval=CandleInterval.CANDLE_INTERVAL_1_MIN,
             ):
                 await analise_historic_candle(candle, share)
@@ -200,19 +203,19 @@ async def analise_historic_candle(candle: HistoricCandle, share: dict):
         else:
             local_data_bollinger.pop(0)
             local_data_bollinger.append(last_price)
-            share_status = strategy(last_price, share["ticker"])
+            # share_status = strategy(last_price, share["ticker"])
             # print(share["ticker"], candle.time + datetime.timedelta(hours=3))
         if len(local_data_rsi) < StrategyConfig.rsi_count_frame * 10:
             local_data_rsi.append(last_price)
         else:
             local_data_rsi.pop(0)
             local_data_rsi.append(last_price)
-            share_status = strategy(last_price, share["ticker"])
+            # share_status = strategy(last_price, share["ticker"])
             # print(share["ticker"], candle.time + datetime.timedelta(hours=3))
     elif len(local_data_bollinger) > 0:
         local_data_bollinger[-1] = last_price
         local_data_rsi[-1] = last_price
-        share_status = strategy(last_price, share["ticker"])
+        # share_status = strategy(last_price, share["ticker"])
         # print(share["ticker"], candle.time + datetime.timedelta(hours=3))
     else:
         return None
@@ -220,7 +223,9 @@ async def analise_historic_candle(candle: HistoricCandle, share: dict):
     #     print(share["ticker"], candle.time + datetime.timedelta(hours=3), last_price)
 
 
-async def orders_check_nikita(tg_bot: TG_Bot, purchases: dict):
+async def orders_check_nikita(
+    nikita_table: Spreadsheet, tg_bot: TG_Bot, purchases: dict
+):
     messages_to_send = []
     async with AsyncRetryingClient(
         Config.NIKITA_TOKEN, Config.RETRY_SETTINGS
